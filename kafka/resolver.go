@@ -20,28 +20,55 @@
 
 package kafka
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 // staticResolver is an implementation of ClusterNameResolver
 // that's backed by a static map of clusters to list of brokers
 type staticResolver struct {
+	topicsToCluster  map[string]string
 	clusterToBrokers map[string][]string
+	sync.RWMutex
 }
 
-// ErrNoBrokers is returned when no brokers can be found for a cluster
-var ErrNoBrokers = errors.New("no brokers found for cluster")
+// errNoBrokers is returned when no brokers can be found for a cluster
+var errNoBrokersForCluster = errors.New("no brokers found for cluster")
+var errNoClusterForTopic = errors.New("no cluster found for topic")
 
-// NewStaticNameResolver returns a instance of TopicNameResolver that relies
+// NewStaticNameResolver returns a instance of NameResolver that relies
 // on a static map of topic to list of brokers
-func NewStaticNameResolver(clusterToBrokers map[string][]string) ClusterNameResolver {
+func NewStaticNameResolver(
+	topicsToCluster map[string]string,
+	clusterToBrokers map[string][]string,
+) NameResolver {
 	return &staticResolver{
+		topicsToCluster:  topicsToCluster,
 		clusterToBrokers: clusterToBrokers,
 	}
 }
 
-func (r *staticResolver) Resolve(topic string) ([]string, error) {
-	if brokers, ok := r.clusterToBrokers[topic]; ok {
+// ResolveIPForCluster returns list of IP addresses by cluster name by looking up in
+// the clusterToBrokers map passed into the NewStaticNameResolver constructor.
+func (r *staticResolver) ResolveIPForCluster(cluster string) ([]string, error) {
+	r.RLock()
+	defer r.RUnlock()
+
+	if brokers, ok := r.clusterToBrokers[cluster]; ok {
 		return brokers, nil
 	}
-	return nil, ErrNoBrokers
+	return nil, errNoBrokersForCluster
+}
+
+// ResolveClusterForTopic resolves the cluster name for a specific topic by looking
+// up in the topicsToCluster map passed into the NewStaticNameResolver constructor.
+func (r *staticResolver) ResolveClusterForTopic(topic string) (string, error) {
+	r.RLock()
+	defer r.RUnlock()
+
+	if cluster, ok := r.topicsToCluster[topic]; ok {
+		return cluster, nil
+	}
+	return "", errNoClusterForTopic
 }

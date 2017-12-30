@@ -64,12 +64,13 @@ type (
 		NewConsumer(config *ConsumerConfig) (Consumer, error)
 	}
 
-	// ClusterNameResolver is the interface for any implementation of
-	// name resolver that can translate a specified cluster name to a
-	// list of broker ip addresses
-	ClusterNameResolver interface {
-		// Resolve takes a cluster name and returns a list of
-		// broker ip addresses for that topic
-		Resolve(cluster string) ([]string, error)
+	// NameResolver is an interface that will be used by the consumer library to resolve
+	// (1) topic to cluster name and (2) cluster name to broker IP addresses.
+	// Implementations of KafkaNameResolver should be threadsafe.
+	NameResolver interface {
+		// ResolveCluster returns a list of IP addresses for the brokers
+		ResolveIPForCluster(cluster string) ([]string, error)
+		// ResolveClusterForTopic returns the logical cluster name corresponding to a topic name
+		ResolveClusterForTopic(topic string) (string, error)
 	}
 )
