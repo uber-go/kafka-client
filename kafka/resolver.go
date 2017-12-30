@@ -36,6 +36,7 @@ type staticResolver struct {
 
 // errNoBrokersForCluster is returned when no brokers can be found for a cluster
 var errNoBrokersForCluster = errors.New("no brokers found for cluster")
+
 // errNoClusterForTopic is returned when no cluster can be found for a topic
 var errNoClusterForTopic = errors.New("no cluster found for topic")
 
