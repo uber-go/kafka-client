@@ -25,20 +25,22 @@ import (
 	"sync"
 )
 
-// staticResolver is an implementation of ClusterNameResolver
+// staticResolver is an implementation of NameResolver
 // that's backed by a static map of clusters to list of brokers
+// and a map of topics to cluster
 type staticResolver struct {
 	topicsToCluster  map[string]string
 	clusterToBrokers map[string][]string
 	sync.RWMutex
 }
 
-// errNoBrokers is returned when no brokers can be found for a cluster
+// errNoBrokersForCluster is returned when no brokers can be found for a cluster
 var errNoBrokersForCluster = errors.New("no brokers found for cluster")
+// errNoClusterForTopic is returned when no cluster can be found for a topic
 var errNoClusterForTopic = errors.New("no cluster found for topic")
 
 // NewStaticNameResolver returns a instance of NameResolver that relies
-// on a static map of topic to list of brokers
+// on a static map of topic to list of brokers and map of topics to cluster
 func NewStaticNameResolver(
 	topicsToCluster map[string]string,
 	clusterToBrokers map[string][]string,

@@ -66,11 +66,11 @@ func (s *ResolverTestSuite) TestResolveClusterForTopic() {
 	topicClusterMap := s.topicClusterMap
 	resolver := NewStaticNameResolver(topicClusterMap, clusterBrokers)
 	s.NotNil(resolver)
-	_, err := resolver.ResolveIPForCluster("foobar")
-	s.Equal(errNoBrokersForCluster, err)
-	for k, v := range clusterBrokers {
-		brokers, err := resolver.ResolveIPForCluster(k)
+	_, err := resolver.ResolveClusterForTopic("foobar")
+	s.Equal(errNoClusterForTopic, err)
+	for k, v := range topicClusterMap {
+		cluster, err := resolver.ResolveClusterForTopic(k)
 		s.NoError(err)
-		s.Equal(v, brokers)
+		s.Equal(v, cluster)
 	}
 }
