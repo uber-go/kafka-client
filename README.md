@@ -24,7 +24,10 @@ func main() {
 		"sample_cluster":     []string{"127.0.0.1:9092"},
 		"sample_dlq_cluster": []string{"127.0.0.1:9092"},
 	}
-	client := kafkaclient.New(kafka.NewStaticNameResolver(brokers), zap.NewNop(), tally.NoopScope)
+	topicClusterAssignment := map[string][]string{
+	    "sample_topic": []string{"sample_cluster"},
+	}
+	client := kafkaclient.New(kafka.NewStaticNameResolver(brokers, topicClusterAssignment), zap.NewNop(), tally.NoopScope)
 	config := &kafka.ConsumerConfig{
 		Topic:       "sample_topic",
 		Cluster:     "sample_cluster",

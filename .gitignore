@@ -4,3 +4,4 @@ vendor
 *.pprof
 *.out
 *.log
+.idea

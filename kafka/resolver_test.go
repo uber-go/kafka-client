@@ -28,25 +28,49 @@ import (
 
 type ResolverTestSuite struct {
 	suite.Suite
+	clusterBrokerMap map[string][]string
+	topicClusterMap  map[string][]string
 }
 
 func TestClientTestSuite(t *testing.T) {
 	suite.Run(t, new(ResolverTestSuite))
 }
 
-func (s *ResolverTestSuite) TestResolve() {
-	clusterBrokers := map[string][]string{
+func (s *ResolverTestSuite) SetupTest() {
+	s.clusterBrokerMap = map[string][]string{
 		"cluster_az1": {"127.0.0.1", "127.0.0.2", "127.0.0.3"},
 		"cluster_az2": {"127.1.1.1"},
 		"cluster_az3": {"127.2.2.2", "127.2.2.3"},
 	}
-	resolver := NewStaticNameResolver(clusterBrokers)
+	s.topicClusterMap = map[string][]string{
+		"topic1": {"cluster_az1"},
+	}
+}
+
+func (s *ResolverTestSuite) TestResolveIPForCluster() {
+	clusterBrokers := s.clusterBrokerMap
+	topicClusterMap := s.topicClusterMap
+	resolver := NewStaticNameResolver(topicClusterMap, clusterBrokers)
 	s.NotNil(resolver)
-	_, err := resolver.Resolve("foobar")
-	s.Equal(ErrNoBrokers, err)
+	_, err := resolver.ResolveIPForCluster("foobar")
+	s.Equal(errNoBrokersForCluster, err)
 	for k, v := range clusterBrokers {
-		brokers, err := resolver.Resolve(k)
+		brokers, err := resolver.ResolveIPForCluster(k)
 		s.NoError(err)
 		s.Equal(v, brokers)
+	}
+}
+
+func (s *ResolverTestSuite) TestResolveClusterForTopic() {
+	clusterBrokers := s.clusterBrokerMap
+	topicClusterMap := s.topicClusterMap
+	resolver := NewStaticNameResolver(topicClusterMap, clusterBrokers)
+	s.NotNil(resolver)
+	_, err := resolver.ResolveClusterForTopic("foobar")
+	s.Equal(errNoClustersForTopic, err)
+	for k, v := range topicClusterMap {
+		cluster, err := resolver.ResolveClusterForTopic(k)
+		s.NoError(err)
+		s.Equal(v, cluster)
 	}
 }

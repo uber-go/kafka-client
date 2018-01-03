@@ -20,28 +20,58 @@
 
 package kafka
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
-// staticResolver is an implementation of ClusterNameResolver
+// staticResolver is an implementation of NameResolver
 // that's backed by a static map of clusters to list of brokers
+// and a map of topics to cluster
 type staticResolver struct {
+	sync.RWMutex
+	topicsToCluster  map[string][]string
 	clusterToBrokers map[string][]string
 }
 
-// ErrNoBrokers is returned when no brokers can be found for a cluster
-var ErrNoBrokers = errors.New("no brokers found for cluster")
+// errNoBrokersForCluster is returned when no brokers can be found for a cluster
+var errNoBrokersForCluster = errors.New("no brokers found for cluster")
 
-// NewStaticNameResolver returns a instance of TopicNameResolver that relies
-// on a static map of topic to list of brokers
-func NewStaticNameResolver(clusterToBrokers map[string][]string) ClusterNameResolver {
+// errNoClustersForTopic is returned when no cluster can be found for a topic
+var errNoClustersForTopic = errors.New("no cluster found for topic")
+
+// NewStaticNameResolver returns a instance of NameResolver that relies
+// on a static map of topic to list of brokers and map of topics to cluster
+func NewStaticNameResolver(
+	topicsToCluster map[string][]string,
+	clusterToBrokers map[string][]string,
+) NameResolver {
 	return &staticResolver{
+		topicsToCluster:  topicsToCluster,
 		clusterToBrokers: clusterToBrokers,
 	}
 }
 
-func (r *staticResolver) Resolve(topic string) ([]string, error) {
-	if brokers, ok := r.clusterToBrokers[topic]; ok {
+// ResolveIPForCluster returns list of IP addresses by cluster name by looking up in
+// the clusterToBrokers map passed into the NewStaticNameResolver constructor.
+func (r *staticResolver) ResolveIPForCluster(cluster string) ([]string, error) {
+	r.RLock()
+	defer r.RUnlock()
+
+	if brokers, ok := r.clusterToBrokers[cluster]; ok {
 		return brokers, nil
 	}
-	return nil, ErrNoBrokers
+	return nil, errNoBrokersForCluster
+}
+
+// ResolveClusterForTopic resolves the cluster name for a specific topic by looking
+// up in the topicsToCluster map passed into the NewStaticNameResolver constructor.
+func (r *staticResolver) ResolveClusterForTopic(topic string) ([]string, error) {
+	r.RLock()
+	defer r.RUnlock()
+
+	if cluster, ok := r.topicsToCluster[topic]; ok {
+		return cluster, nil
+	}
+	return nil, errNoClustersForTopic
 }
