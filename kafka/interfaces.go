@@ -70,7 +70,10 @@ type (
 	NameResolver interface {
 		// ResolveCluster returns a list of IP addresses for the brokers
 		ResolveIPForCluster(cluster string) ([]string, error)
-		// ResolveClusterForTopic returns the logical cluster name corresponding to a topic name
-		ResolveClusterForTopic(topic string) (string, error)
+		// ResolveClusterForTopic returns the logical cluster names corresponding to a topic name
+		//
+		// It is possible for a topic to exist on multiple clusters in order to
+		// transparently handle topic migration between clusters.
+		ResolveClusterForTopic(topic string) ([]string, error)
 	}
 )

@@ -29,7 +29,7 @@ import (
 type ResolverTestSuite struct {
 	suite.Suite
 	clusterBrokerMap map[string][]string
-	topicClusterMap  map[string]string
+	topicClusterMap  map[string][]string
 }
 
 func TestClientTestSuite(t *testing.T) {
@@ -42,8 +42,8 @@ func (s *ResolverTestSuite) SetupTest() {
 		"cluster_az2": {"127.1.1.1"},
 		"cluster_az3": {"127.2.2.2", "127.2.2.3"},
 	}
-	s.topicClusterMap = map[string]string{
-		"topic1": "cluster_az1",
+	s.topicClusterMap = map[string][]string{
+		"topic1": {"cluster_az1"},
 	}
 }
 
@@ -67,7 +67,7 @@ func (s *ResolverTestSuite) TestResolveClusterForTopic() {
 	resolver := NewStaticNameResolver(topicClusterMap, clusterBrokers)
 	s.NotNil(resolver)
 	_, err := resolver.ResolveClusterForTopic("foobar")
-	s.Equal(errNoClusterForTopic, err)
+	s.Equal(errNoClustersForTopic, err)
 	for k, v := range topicClusterMap {
 		cluster, err := resolver.ResolveClusterForTopic(k)
 		s.NoError(err)
