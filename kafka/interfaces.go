@@ -74,6 +74,7 @@ type (
 		//
 		// It is possible for a topic to exist on multiple clusters in order to
 		// transparently handle topic migration between clusters.
+		// TODO (gteo): Remove to simplify API because not needed anymore
 		ResolveClusterForTopic(topic string) ([]string, error)
 	}
 )

@@ -25,9 +25,16 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
+	"sync"
 )
 
 type (
+	// saramaProducerMap is a threadsafe map of sarama producers per cluster
+	saramaProducerMap struct {
+		sync.RWMutex
+		producers map[string]sarama.SyncProducer
+	}
+
 	// SaramaConsumer is an interface for external consumer library (sarama)
 	SaramaConsumer interface {
 		Close() error
@@ -54,3 +61,11 @@ type (
 		ConsumerMode           cluster.ConsumerMode
 	}
 )
+
+// Get is a thredsafe access of saramaProducerMap
+func (m *saramaProducerMap) Get(key string) (sarama.SyncProducer, bool) {
+	m.RLock()
+	defer m.RUnlock()
+	value, ok := m.producers[key]
+	return value, ok
+}

@@ -25,13 +25,13 @@ import (
 
 	"os"
 
+	"fmt"
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"fmt"
 )
 
 // Client refers to the kafka client. Serves as
@@ -65,9 +65,10 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kaf
 
 // NewConsumer returns a new instance of kafka consumer
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
-	saramaConsumerMap := c.saramaConsumerMap(config)
+	opts := buildOptions(config)
+	saramaConsumerMap := c.saramaConsumerMap(config, &opts)
 	saramaProducerMap := c.saramaProducerMap(config)
-	return consumer.New(config, saramaConsumerMap, saramaProducerMap, c.tally, c.logger)
+	return consumer.New(config, &opts, saramaConsumerMap, saramaProducerMap, c.tally, c.logger)
 }
 
 func (c *Client) saramaProducerMap(config *kafka.ConsumerConfig) map[string]sarama.SyncProducer {
@@ -89,10 +90,9 @@ func (c *Client) saramaProducerMap(config *kafka.ConsumerConfig) map[string]sara
 	return output
 }
 
-func (c *Client) saramaConsumerMap(config *kafka.ConsumerConfig) map[string]consumer.SaramaConsumer {
+func (c *Client) saramaConsumerMap(config *kafka.ConsumerConfig, opts *consumer.Options) map[string]consumer.SaramaConsumer {
 	clusterTopicMap := c.clusterTopicMap(config)
-	opts := buildOptions(config)
-	saramaConfig := buildSaramaConfig(&opts)
+	saramaConfig := buildSaramaConfig(opts)
 
 	output := make(map[string]consumer.SaramaConsumer)
 	for clusterName, topicInfo := range clusterTopicMap {
@@ -113,7 +113,7 @@ func (c *Client) saramaConsumerMap(config *kafka.ConsumerConfig) map[string]cons
 	return output
 }
 
-func (c *Client) clusterTopicMap(config *kafka.ConsumerConfig) map[string]kafka.Topics{
+func (c *Client) clusterTopicMap(config *kafka.ConsumerConfig) map[string]kafka.Topics {
 	output := make(map[string]kafka.Topics)
 	for _, info := range config.Topics {
 		cluster := info.Cluster

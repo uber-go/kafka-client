@@ -21,6 +21,7 @@
 package kafka
 
 import (
+	"fmt"
 	"github.com/Shopify/sarama"
 )
 
@@ -32,6 +33,7 @@ const (
 )
 
 type (
+	// Topics is an array of TopicConfig
 	Topics []TopicConfig
 
 	// TopicConfig contains the information about the topic and cluster to consume
@@ -57,9 +59,6 @@ type (
 		// Topics is a list of TopicConfig to consume from.
 		Topics Topics
 
-		// Cluster is the name of the cluster hosting this topic
-		Cluster string
-
 		// OffsetConfig is the offset-handling policy for this consumer group.
 		Offsets struct {
 			// Initial specifies the fallback offset configuration on consumer start.
@@ -84,11 +83,32 @@ type (
 	}
 )
 
-// TopicsAsString returns a list of topics to consume
+// TopicsAsString returns a list of topics strings to consume
 func (t Topics) TopicsAsString() []string {
 	output := make([]string, 0, len(t))
 	for _, topic := range t {
 		output = append(output, topic.Topic)
 	}
 	return output
+}
+
+// FilterByCluster returns a new copy of Topics with TopicConfig matching the Cluster specified in params.
+func (t Topics) FilterByCluster(cluster string) Topics {
+	output := make([]TopicConfig, 0)
+	for _, config := range t {
+		if config.Cluster == cluster {
+			output = append(output, config)
+		}
+	}
+	return output
+}
+
+// GetByClusterAndTopic returns TopicConfig based on Cluster and Topic
+func (t Topics) GetByClusterAndTopic(cluster, topic string) (TopicConfig, error) {
+	for _, config := range t {
+		if config.Cluster == cluster && config.Topic == topic {
+			return config, nil
+		}
+	}
+	return TopicConfig{}, fmt.Errorf("Unable to find TopicConfig with cluster=%s,topic=%s", cluster, topic)
 }
