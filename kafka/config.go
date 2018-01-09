@@ -32,13 +32,21 @@ const (
 )
 
 type (
-	// DLQConfig contains the configuration for consumer Dead Letter Queue
-	DLQConfig struct {
-		// Name of the dlq topic. If empty, dlq will be disabled for this consumer
-		Name string
-		// Name of the cluster hosting this DLQ
+	Topics []TopicConfig
+
+	// TopicConfig contains the information about the topic and cluster to consume
+	// and the DLQ topic and cluster for writing nack messages to.
+	TopicConfig struct {
+		// Topic is the name of the topic to consume from.
+		Topic string
+		// Cluster is the Cluster to consume this topic from.
 		Cluster string
+		// DLQTopic is a topic to write nack messages on.
+		DLQTopic string
+		// DLQCluster is a cluster to write nack messages to.
+		DLQCluster string
 	}
+
 	// ConsumerConfig describes the config for a consumer group
 	ConsumerConfig struct {
 		// GroupName identifies your consumer group. Unless your application creates
@@ -46,8 +54,8 @@ type (
 		// prefix of the group name), this should match your application name.
 		GroupName string
 
-		// Topic is the name of topic to consume from.
-		Topic string
+		// Topics is a list of TopicConfig to consume from.
+		Topics Topics
 
 		// Cluster is the name of the cluster hosting this topic
 		Cluster string
@@ -73,8 +81,14 @@ type (
 		// When using the handler based API, this corresponds to the number of concurrent go
 		// routines handler functions the library will run. Default is 1.
 		Concurrency int
-
-		// DLQ defines the configuration for Dead Letter Queue
-		DLQ DLQConfig
 	}
 )
+
+// TopicsAsString returns a list of topics to consume
+func (t Topics) TopicsAsString() []string {
+	output := make([]string, 0, len(t))
+	for _, topic := range t {
+		output = append(output, topic.Topic)
+	}
+	return output
+}

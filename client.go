@@ -31,6 +31,7 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"fmt"
 )
 
 // Client refers to the kafka client. Serves as
@@ -39,7 +40,7 @@ import (
 type Client struct {
 	tally    tally.Scope
 	logger   *zap.Logger
-	resolver kafka.ClusterNameResolver
+	resolver kafka.NameResolver
 }
 
 var defaultOptions = consumer.Options{
@@ -54,7 +55,7 @@ var defaultOptions = consumer.Options{
 }
 
 // New returns a new kafka client
-func New(resolver kafka.ClusterNameResolver, logger *zap.Logger, scope tally.Scope) kafka.Client {
+func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kafka.Client {
 	return &Client{
 		resolver: resolver,
 		logger:   logger,
@@ -64,37 +65,66 @@ func New(resolver kafka.ClusterNameResolver, logger *zap.Logger, scope tally.Sco
 
 // NewConsumer returns a new instance of kafka consumer
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
-	brokers, err := c.resolver.Resolve(config.Topic)
-	if err != nil {
-		return nil, err
-	}
-	opts := buildOptions(config)
-	saramaConfig := buildSaramaConfig(&opts)
-	saramaConsumer, err := cluster.NewConsumer(brokers, config.GroupName, []string{config.Topic}, saramaConfig)
-	if err != nil {
-		return nil, err
-	}
-	dlq, err := c.newDLQ(config)
-	if err != nil {
-		saramaConsumer.Close()
-		return nil, err
-	}
-	return consumer.New(config, saramaConsumer, &opts, dlq, c.tally, c.logger)
+	saramaConsumerMap := c.saramaConsumerMap(config)
+	saramaProducerMap := c.saramaProducerMap(config)
+	return consumer.New(config, saramaConsumerMap, saramaProducerMap, c.tally, c.logger)
 }
 
-func (c *Client) newDLQ(config *kafka.ConsumerConfig) (consumer.DLQ, error) {
-	if config.DLQ.Name == "" {
-		return consumer.NewDLQNoop(), nil
+func (c *Client) saramaProducerMap(config *kafka.ConsumerConfig) map[string]sarama.SyncProducer {
+	output := make(map[string]sarama.SyncProducer)
+	clusterTopicMap := c.clusterTopicMap(config)
+	for clusterName, _ := range clusterTopicMap {
+		brokers, err := c.resolver.ResolveIPForCluster(clusterName)
+		if err != nil {
+			c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Failed to resolve broker IP for cluster %s", clusterName))
+			continue
+		}
+		producer, err := c.newSyncProducer(brokers)
+		if err != nil {
+			c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Failed to create sarama SyncProducer for cluster %s", clusterName))
+			continue
+		}
+		output[clusterName] = producer
 	}
-	brokers, err := c.resolver.Resolve(config.DLQ.Name)
-	if err != nil {
-		return nil, err
+	return output
+}
+
+func (c *Client) saramaConsumerMap(config *kafka.ConsumerConfig) map[string]consumer.SaramaConsumer {
+	clusterTopicMap := c.clusterTopicMap(config)
+	opts := buildOptions(config)
+	saramaConfig := buildSaramaConfig(&opts)
+
+	output := make(map[string]consumer.SaramaConsumer)
+	for clusterName, topicInfo := range clusterTopicMap {
+		brokers, err := c.resolver.ResolveIPForCluster(clusterName)
+		if err != nil {
+			c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Failed to resolve broker IP for %s", clusterName))
+			continue
+		}
+
+		saramaConsumer, err := cluster.NewConsumer(brokers, config.GroupName, topicInfo.TopicsAsString(), saramaConfig)
+		if err != nil {
+			c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Failed to create sarama consumer"))
+			continue
+		}
+
+		output[clusterName] = saramaConsumer
 	}
-	producer, err := c.newSyncProducer(brokers)
-	if err != nil {
-		return nil, err
+	return output
+}
+
+func (c *Client) clusterTopicMap(config *kafka.ConsumerConfig) map[string]kafka.Topics{
+	output := make(map[string]kafka.Topics)
+	for _, info := range config.Topics {
+		cluster := info.Cluster
+		infos, ok := output[cluster]
+		if !ok {
+			infos = make([]kafka.TopicConfig, 0)
+		}
+		infos = append(infos, info)
+		output[cluster] = infos
 	}
-	return consumer.NewDLQ(config.DLQ.Name, producer, c.tally, c.logger), nil
+	return output
 }
 
 // newSyncProducer returns a new sarama sync producer from the cluster config
