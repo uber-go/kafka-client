@@ -22,30 +22,29 @@ package consumer
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
-	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"strconv"
 )
 
 type (
-	// consumerMap is a map that contains multiple kafka consumers
-	consumerMap struct {
-		name      string
-		topics    kafka.Topics
-		consumers map[string]kafka.Consumer
-		producers *saramaProducerMap
-		msgCh     chan kafka.Message
-		doneC     chan struct{}
-		tally     tally.Scope
-		logger    *zap.Logger
-		lifecycle *util.RunLifecycle
+	// multiConsumerMap is a map that contains multiple kafka consumers
+	multiConsumerMap struct {
+		name              string
+		topics            kafka.ConsumerTopicList
+		consumers         map[string]kafka.Consumer
+		saramaConnections *SaramaClusters
+		msgCh             chan kafka.Message
+		doneC             chan struct{}
+		tally             tally.Scope
+		logger            *zap.Logger
+		lifecycle         *util.RunLifecycle
 	}
 
 	topicPartitionMap struct {
@@ -60,11 +59,11 @@ type (
 	// clusterConsumer is an implementation of kafka consumer that consumes messages from a single cluster
 	clusterConsumer struct {
 		name       string
-		topics     kafka.Topics
+		topics     kafka.ConsumerTopicList
 		cluster    string
 		msgCh      chan kafka.Message
 		consumer   SaramaConsumer
-		producers  *saramaProducerMap
+		producers  map[kafka.Topic]DLQ // Map of DLQ topic -> DLQ
 		partitions topicPartitionMap
 		options    *Options
 		tally      tally.Scope
@@ -87,66 +86,67 @@ type (
 // designed for idempotency
 func New(
 	config *kafka.ConsumerConfig,
-	options *Options,
-	consumers map[string]SaramaConsumer,
-	producers map[string]sarama.SyncProducer,
+	consumers map[string]kafka.Consumer,
+	sarama *SaramaClusters,
+	msgCh chan kafka.Message,
 	scope tally.Scope,
 	log *zap.Logger) (kafka.Consumer, error) {
-	return newConsumers(config, options, consumers, producers, scope, log)
+	return newMultiConsumerMap(config, consumers, sarama, msgCh, scope, log)
 }
 
-func newConsumers(
+func newMultiConsumerMap(
 	config *kafka.ConsumerConfig,
-	options *Options,
-	consumers map[string]SaramaConsumer,
-	producers map[string]sarama.SyncProducer,
+	consumers map[string]kafka.Consumer,
+	sarama *SaramaClusters,
+	msgCh chan kafka.Message,
 	scope tally.Scope,
 	log *zap.Logger,
-) (*consumerMap, error) {
-	threadsafeProducerMap := &saramaProducerMap{
-		producers: producers,
-	}
-	msgCh := make(chan kafka.Message, options.RcvBufferSize)
-
-	clusterConsumers := make(map[string]kafka.Consumer)
-	for clusterName, sc := range consumers {
-		cc, err := newClusterConsumer(
-			clusterName,
-			config,
-			options,
-			config.Topics.FilterByCluster(clusterName),
-			msgCh,
-			sc,
-			threadsafeProducerMap,
-			scope,
-			log,
-		)
-		if err != nil {
-			log.With(zap.Error(err)).Error(fmt.Sprintf("Failed to create cluster consumer for cluster=%s. Will not consume from this cluster", clusterName))
-			continue
-		}
-		clusterConsumers[clusterName] = cc
-	}
-
-	return &consumerMap{
-		name:      config.GroupName,
-		topics:    config.Topics,
-		consumers: clusterConsumers,
-		msgCh:     msgCh,
-		tally:     scope,
-		logger:    log,
-		lifecycle: util.NewRunLifecycle(config.GroupName+"-consumer", log),
+) (*multiConsumerMap, error) {
+	return &multiConsumerMap{
+		name:              config.GroupName,
+		topics:            config.TopicList,
+		consumers:         consumers,
+		saramaConnections: sarama,
+		msgCh:             msgCh,
+		tally:             scope,
+		logger:            log,
+		lifecycle:         util.NewRunLifecycle(config.GroupName+"-consumer", log),
 	}, nil
+}
+
+// NewClusterConsumer returns a Kafka Consumer that consumes from a single Kafka cluster
+func NewClusterConsumer(
+	cluster string,
+	config *kafka.ConsumerConfig,
+	options *Options,
+	topics kafka.ConsumerTopicList,
+	msgCh chan kafka.Message,
+	consumer SaramaConsumer,
+	producers map[kafka.Topic]DLQ,
+	tally tally.Scope,
+	logger *zap.Logger,
+) (kafka.Consumer, error) {
+	return newClusterConsumer(
+		cluster,
+		config,
+		options,
+		topics,
+		msgCh,
+		consumer,
+		producers,
+		tally,
+		logger,
+	)
 }
 
 func newClusterConsumer(
 	cluster string,
 	config *kafka.ConsumerConfig,
 	options *Options,
-	topics kafka.Topics,
+	topics kafka.ConsumerTopicList,
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
-	producers *saramaProducerMap,
+	producers map[kafka.Topic]DLQ,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -167,15 +167,15 @@ func newClusterConsumer(
 	}, nil
 }
 
-func (c *consumerMap) Name() string {
+func (c *multiConsumerMap) Name() string {
 	return c.name
 }
 
-func (c *consumerMap) Topics() []string {
-	return c.topics.TopicsAsString()
+func (c *multiConsumerMap) Topics() []string {
+	return c.topics.TopicNames()
 }
 
-func (c *consumerMap) Start() error {
+func (c *multiConsumerMap) Start() error {
 	return c.lifecycle.Start(func() error {
 		errAcc := newErrorAccumulator()
 		for clusterName, consumer := range c.consumers {
@@ -189,26 +189,33 @@ func (c *consumerMap) Start() error {
 	})
 }
 
-func (c *consumerMap) Stop() {
+func (c *multiConsumerMap) Stop() {
 	c.lifecycle.Stop(func() {
 		for _, consumer := range c.consumers {
 			consumer.Stop()
 		}
 
-		c.producers.Lock()
-		for _, producer := range c.producers.producers {
-			producer.Close()
+		c.saramaConnections.Lock()
+		for _, clusterConnection := range c.saramaConnections.Clusters {
+			clusterConnection.Lock()
+			if clusterConnection.Consumer != nil {
+				clusterConnection.Consumer.Close()
+			}
+			if clusterConnection.Producer != nil {
+				clusterConnection.Producer.Close()
+			}
+			clusterConnection.Unlock()
 		}
-		c.producers.Unlock()
+		c.saramaConnections.Unlock()
 		close(c.doneC)
 	})
 }
 
-func (c *consumerMap) Closed() <-chan struct{} {
+func (c *multiConsumerMap) Closed() <-chan struct{} {
 	return c.doneC
 }
 
-func (c *consumerMap) Messages() <-chan kafka.Message {
+func (c *multiConsumerMap) Messages() <-chan kafka.Message {
 	return c.msgCh
 }
 
@@ -219,7 +226,7 @@ func (c *clusterConsumer) Name() string {
 
 // Topics returns the topics that this consumer is subscribed to
 func (c *clusterConsumer) Topics() []string {
-	return c.topics.TopicsAsString()
+	return c.topics.TopicNames()
 }
 
 // Start starts the consumer
@@ -280,15 +287,14 @@ func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
 	c.logger.Info("new partition", zap.String("topic", pc.Topic()), zap.Int32("partition", pc.Partition()))
 
 	// TODO (gteo): Consider using a blocking dlq implementation or throwing fatal error
-	dlq := newDLQNoop()
-	tc, err := c.topics.GetByClusterAndTopic(c.cluster, pc.Topic())
-	if err == nil {
-		dlq, err = newDLQ(tc.DLQTopic, tc.DLQCluster, c.producers, c.tally, c.logger)
-		if err != nil {
-			c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Using Noop DLQ Producer for topic=%s,cluster=%s,partition%d. May lose data.", pc.Topic(), c.cluster, pc.Partition()))
-		}
-	} else {
-		c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Using Noop DLQ Producer for topic=%s,cluster=%s,partition%d. May lose data.", pc.Topic(), c.cluster, pc.Partition()))
+	dlq, err := c.getDLQ(pc.Topic(), c.cluster)
+	if err != nil {
+		c.logger.With(
+			zap.Error(err),
+			zap.String("topic", pc.Topic()),
+			zap.String("cluster", c.cluster),
+		).Error("failed to find dlq producer for this topic so using noop dlq producer may result in data loss")
+		dlq = NewDLQNoop()
 	}
 
 	p := newPartitionConsumer(c.consumer, pc, c.options, c.msgCh, dlq, c.tally, c.logger)
@@ -296,34 +302,44 @@ func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
 	p.Start()
 }
 
+func (c *clusterConsumer) getDLQ(topic, cluster string) (DLQ, error) {
+	consumerTopic, err := c.topics.FilterByClusterTopic(cluster, topic)
+	if err != nil {
+		return nil, err
+	}
+
+	dlq, ok := c.producers[consumerTopic.DLQ]
+	if !ok {
+		return nil, fmt.Errorf("no DLQ producer found")
+	}
+
+	return dlq, nil
+}
+
 // handleNotification is the handler that handles notifications
 // from the underlying library about partition rebalances. There
 // is no action taken in this handler except for logging.
 func (c *clusterConsumer) handleNotification(n *cluster.Notification) {
-	var claimed, released, current []string
 	for topic, partitions := range n.Claimed {
 		for _, partition := range partitions {
-			claimed = append(claimed, fmt.Sprintf("%s-%s", topic, strconv.Itoa(int(partition))))
+			c.logger.Debug("partition rebalance claimed", zap.String("topic", topic), zap.Int32("partition", partition))
 		}
 	}
 
 	for topic, partitions := range n.Released {
 		for _, partition := range partitions {
-			released = append(released, fmt.Sprintf("%s-%s", topic, strconv.Itoa(int(partition))))
+			c.logger.Debug("partition rebalance released", zap.String("topic", topic), zap.Int32("partition", partition))
 		}
 	}
 
+	var current []string
 	for topic, partitions := range n.Current {
 		for _, partition := range partitions {
 			current = append(current, fmt.Sprintf("%s-%s", topic, strconv.Itoa(int(partition))))
 		}
 	}
 
-	c.logger.Info("cluster rebalance notification",
-		zap.Strings("claimed", claimed),
-		zap.Strings("released", released),
-		zap.Strings("current", current),
-	)
+	c.logger.Info("owned topic-partitions", zap.Strings("topic-partitions", current))
 }
 
 // shutdown shutsdown the consumer

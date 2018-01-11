@@ -23,7 +23,6 @@ package consumer
 import (
 	"time"
 
-	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/uber-go/kafka-client/internal/backoff"
 	"github.com/uber-go/kafka-client/kafka"
@@ -55,20 +54,15 @@ const (
 	dlqRetryMaxInterval     = 10 * time.Second
 )
 
-func newDLQ(topic, cluster string, producers *saramaProducerMap, scope tally.Scope, logger *zap.Logger) (DLQ, error) {
-	producer, ok := producers.Get(cluster)
-	if !ok {
-		// TODO (gteo): Consider using a blocking implementation or throwing fatal error
-		return &dlqNoop{}, fmt.Errorf("Failed to initialize DLQ producer for topic=%s,cluster=%s", topic, cluster)
-	}
-
+// NewDLQ returns a DLQ writer for writing to a specific DLQ topic
+func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
 	return &dlqImpl{
 		topic:       topic,
 		producer:    producer,
 		retryPolicy: newDLQRetryPolicy(),
 		tally:       scope,
 		logger:      logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
-	}, nil
+	}
 }
 
 // Add blocks until successfully enqueuing the given
@@ -111,7 +105,7 @@ func (d *dlqImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
 
 // NewDLQNoop returns a DLQ that drops everything on the floor
 // this is used only when DLQ is not configured for a consumer
-func newDLQNoop() DLQ {
+func NewDLQNoop() DLQ {
 	return &dlqNoop{}
 }
 func (d *dlqNoop) Add(m kafka.Message) error { return nil }

@@ -33,21 +33,28 @@ const (
 )
 
 type (
-	// Topics is an array of TopicConfig
-	Topics []TopicConfig
-
-	// TopicConfig contains the information about the topic and cluster to consume
-	// and the DLQ topic and cluster for writing nack messages to.
-	TopicConfig struct {
-		// Topic is the name of the topic to consume from.
-		Topic string
-		// Cluster is the Cluster to consume this topic from.
+	// Topic contains information for a topic.
+	// Our topics are uniquely defined by a Topic Name and Cluster pair.
+	Topic struct {
+		// Name for the topic
+		Name string
+		// Cluster is the logical name of the cluster to find this topic on.
 		Cluster string
-		// DLQTopic is a topic to write nack messages on.
-		DLQTopic string
-		// DLQCluster is a cluster to write nack messages to.
-		DLQCluster string
+		// BrokerList for the cluster to consume this topic from
+		// If this is empty, we will get the broker list using the NameResolver
+		BrokerList []string
 	}
+
+	// ConsumerTopic contains information for a consumer topic.
+	// Consumer topics has contains two Topics:
+	// the topic to consume from and the DLQ topic to send nacked messages to.
+	ConsumerTopic struct {
+		Topic
+		DLQ Topic
+	}
+
+	// ConsumerTopicList is a list of consumer topics
+	ConsumerTopicList []ConsumerTopic
 
 	// ConsumerConfig describes the config for a consumer group
 	ConsumerConfig struct {
@@ -56,8 +63,8 @@ type (
 		// prefix of the group name), this should match your application name.
 		GroupName string
 
-		// Topics is a list of TopicConfig to consume from.
-		Topics Topics
+		// TopicList is a list of consumer topics
+		TopicList ConsumerTopicList
 
 		// OffsetConfig is the offset-handling policy for this consumer group.
 		Offsets struct {
@@ -83,32 +90,62 @@ type (
 	}
 )
 
-// TopicsAsString returns a list of topics strings to consume
-func (t Topics) TopicsAsString() []string {
-	output := make([]string, 0, len(t))
-	for _, topic := range t {
-		output = append(output, topic.Topic)
+// ClusterTopicMap returns a list of ConsumerTopics for each cluster.
+func (c ConsumerTopicList) ClusterTopicMap() map[string]ConsumerTopicList {
+	output := make(map[string]ConsumerTopicList)
+	for _, topic := range c {
+		clusterName := topic.Name
+		topicList, ok := output[clusterName]
+		if !ok {
+			topicList = make([]ConsumerTopic, 0)
+		}
+		topicList = append(topicList, topic)
+		output[clusterName] = topicList
 	}
 	return output
 }
 
-// FilterByCluster returns a new copy of Topics with TopicConfig matching the Cluster specified in params.
-func (t Topics) FilterByCluster(cluster string) Topics {
-	output := make([]TopicConfig, 0)
-	for _, config := range t {
-		if config.Cluster == cluster {
-			output = append(output, config)
+// DLQClusterTopicMap returns a list of ConsumerTopics for each DLQ cluster.
+func (c ConsumerTopicList) DLQClusterTopicMap() map[string]ConsumerTopicList {
+	output := make(map[string]ConsumerTopicList)
+	for _, topic := range c {
+		clusterName := topic.DLQ.Cluster
+		topicList, ok := output[clusterName]
+		if !ok {
+			topicList = make([]ConsumerTopic, 0)
+		}
+		topicList = append(topicList, topic)
+		output[clusterName] = topicList
+	}
+	return output
+}
+
+// TopicNames returns the list of topics to consume as a string array.
+func (c ConsumerTopicList) TopicNames() []string {
+	output := make([]string, 0, len(c))
+	for _, topic := range c {
+		output = append(output, topic.Name)
+	}
+	return output
+}
+
+// FilterByCluster returns a new ConsumerTopicList with ConsumerTopic to be consumed from the specified cluster.
+func (c ConsumerTopicList) FilterByCluster(clusterName string) ConsumerTopicList {
+	output := make([]ConsumerTopic, 0, len(c))
+	for _, topic := range c {
+		if clusterName == topic.Cluster {
+			output = append(output, topic)
 		}
 	}
 	return output
 }
 
-// GetByClusterAndTopic returns TopicConfig based on Cluster and Topic
-func (t Topics) GetByClusterAndTopic(cluster, topic string) (TopicConfig, error) {
-	for _, config := range t {
-		if config.Cluster == cluster && config.Topic == topic {
-			return config, nil
+// FilterByClusterTopic returns the ConsumerTopic for the cluster, topic pair.
+func (c ConsumerTopicList) FilterByClusterTopic(clusterName, topicName string) (ConsumerTopic, error) {
+	for _, topic := range c {
+		if topic.Cluster == clusterName && topic.Name == topicName {
+			return topic, nil
 		}
 	}
-	return TopicConfig{}, fmt.Errorf("Unable to find TopicConfig with cluster=%s,topic=%s", cluster, topic)
+	return ConsumerTopic{}, fmt.Errorf("unable to find TopicConfig with cluster %s and topic %s", clusterName, topicName)
 }

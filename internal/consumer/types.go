@@ -29,10 +29,19 @@ import (
 )
 
 type (
-	// saramaProducerMap is a threadsafe map of sarama producers per cluster
-	saramaProducerMap struct {
+	// SaramaCluster is a cluster specific threadsafe container for Sarama consumers and producers.
+	// If you access the Consumer/Producer type directly, you are responsible for acquiring the RWLock.
+	SaramaCluster struct {
 		sync.RWMutex
-		producers map[string]sarama.SyncProducer
+		Consumer SaramaConsumer
+		Producer sarama.SyncProducer
+	}
+
+	// SaramaClusters is a thredsafe map of SaramaClusters.
+	// If you access the Consumer/Producer type directly, you are responsible for acquiring the RWLock.
+	SaramaClusters struct {
+		sync.RWMutex
+		Clusters map[string]*SaramaCluster
 	}
 
 	// SaramaConsumer is an interface for external consumer library (sarama)
@@ -61,11 +70,3 @@ type (
 		ConsumerMode           cluster.ConsumerMode
 	}
 )
-
-// Get is a thredsafe access of saramaProducerMap
-func (m *saramaProducerMap) Get(key string) (sarama.SyncProducer, bool) {
-	m.RLock()
-	defer m.RUnlock()
-	value, ok := m.producers[key]
-	return value, ok
-}
