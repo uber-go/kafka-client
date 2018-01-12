@@ -94,7 +94,7 @@ type (
 func (c ConsumerTopicList) ClusterTopicMap() map[string]ConsumerTopicList {
 	output := make(map[string]ConsumerTopicList)
 	for _, topic := range c {
-		clusterName := topic.Name
+		clusterName := topic.Cluster
 		topicList, ok := output[clusterName]
 		if !ok {
 			topicList = make([]ConsumerTopic, 0)

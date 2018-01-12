@@ -180,7 +180,10 @@ func (c *multiConsumerMap) Start() error {
 		errAcc := newErrorAccumulator()
 		for clusterName, consumer := range c.consumers {
 			if err := consumer.Start(); err != nil {
-				c.logger.With(zap.Error(err)).Error(fmt.Sprintf("Failed to start consumer for cluster=%s", clusterName))
+				c.logger.With(
+					zap.Error(err),
+					zap.String("cluster", clusterName),
+				).Error("failed to start cluster consumer")
 				errAcc = append(errAcc, err)
 				continue
 			}
@@ -247,7 +250,7 @@ func (c *clusterConsumer) Stop() {
 	})
 }
 
-// Closed returns a channel which will closed after this consumer is shutown
+// Closed returns a channel which will closed after this consumer is shutdown
 func (c *clusterConsumer) Closed() <-chan struct{} {
 	return c.doneC
 }

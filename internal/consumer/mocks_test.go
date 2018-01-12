@@ -49,7 +49,7 @@ type (
 	}
 	mockDLQProducer struct {
 		sync.Mutex
-		closed bool
+		closed int64
 		size   int
 		keys   map[string]struct{}
 	}
@@ -189,7 +189,7 @@ func (m *mockSaramaConsumer) HighWaterMarks() map[string]map[int32]int64 {
 }
 
 func (m *mockSaramaConsumer) Close() error {
-	atomic.StoreInt64(&m.closed, 1)
+	atomic.AddInt64(&m.closed, 1)
 	return nil
 }
 
@@ -224,13 +224,13 @@ func (d *mockDLQProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 func (d *mockDLQProducer) Close() error {
 	d.Lock()
 	defer d.Unlock()
-	d.closed = true
+	atomic.AddInt64(&d.closed, 1)
 	return nil
 }
 func (d *mockDLQProducer) isClosed() bool {
 	d.Lock()
 	defer d.Unlock()
-	return d.closed
+	return atomic.LoadInt64(&d.closed) == 1
 }
 func (d *mockDLQProducer) backlog() int {
 	d.Lock()

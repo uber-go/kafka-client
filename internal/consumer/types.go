@@ -95,6 +95,10 @@ func NewSaramaConsumer(brokers []string, groupID string, topics []string, config
 		return nil, err
 	}
 
+	return newSaramaConsumer(c)
+}
+
+func newSaramaConsumer(c SaramaConsumer) (SaramaConsumer, error) {
 	sc := saramaConsumer{
 		SaramaConsumer: c,
 		lifecycle:      util.NewRunLifecycle("sarama-consumer", zap.NewNop()),
@@ -102,7 +106,7 @@ func NewSaramaConsumer(brokers []string, groupID string, topics []string, config
 
 	sc.lifecycle.Start(func() error { return nil }) // must start lifecycle so stop will stop
 
-	return c, nil
+	return &sc, nil
 }
 
 // NewSaramaProducer returns a new SyncProducer that has Close method that can be called multiple times.
@@ -112,6 +116,10 @@ func NewSaramaProducer(brokers []string, config *sarama.Config) (sarama.SyncProd
 		return nil, err
 	}
 
+	return newSaramaProducer(p)
+}
+
+func newSaramaProducer(p sarama.SyncProducer) (sarama.SyncProducer, error) {
 	sp := saramaProducer{
 		SyncProducer: p,
 		lifecycle:    util.NewRunLifecycle("sarama-producer", zap.NewNop()),
@@ -119,7 +127,7 @@ func NewSaramaProducer(brokers []string, config *sarama.Config) (sarama.SyncProd
 
 	sp.lifecycle.Start(func() error { return nil }) // must start lifecycle so stop will stop
 
-	return p, nil
+	return &sp, nil
 }
 
 // Close overwrites the underlying sarama SyncProducer Close method with one that can be safely called multiple times.
