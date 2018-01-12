@@ -65,7 +65,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kaf
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
 	opts := buildOptions(config)
 	saramaConfig := buildSaramaConfig(&opts)
-	msgCh := make(chan kafka.Message)
+	msgCh := make(chan kafka.Message, opts.RcvBufferSize)
 	topicList := c.resolveBrokers(config.TopicList)
 	clusterTopicMap := topicList.ClusterTopicMap()
 	dlqClusterTopicMap := topicList.DLQClusterTopicMap()
