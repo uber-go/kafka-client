@@ -63,7 +63,7 @@ type (
 		cluster    string
 		msgCh      chan kafka.Message
 		consumer   SaramaConsumer
-		producers  map[kafka.Topic]DLQ // Map of DLQ topic -> DLQ
+		producers  map[string]DLQ // Map of DLQ topic -> DLQ
 		partitions topicPartitionMap
 		options    *Options
 		tally      tally.Scope
@@ -122,7 +122,7 @@ func NewClusterConsumer(
 	topics kafka.ConsumerTopicList,
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
-	producers map[kafka.Topic]DLQ,
+	producers map[string]DLQ,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (kafka.Consumer, error) {
@@ -146,7 +146,7 @@ func newClusterConsumer(
 	topics kafka.ConsumerTopicList,
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
-	producers map[kafka.Topic]DLQ,
+	producers map[string]DLQ,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -308,7 +308,7 @@ func (c *clusterConsumer) getDLQ(topic, cluster string) (DLQ, error) {
 		return nil, err
 	}
 
-	dlq, ok := c.producers[consumerTopic.DLQ]
+	dlq, ok := c.producers[consumerTopic.DLQ.HashKey()]
 	if !ok {
 		return nil, fmt.Errorf("no DLQ producer found")
 	}
@@ -354,8 +354,10 @@ func (c *clusterConsumer) shutdown() {
 	}
 	wg.Wait()
 	c.partitions.Clear()
-	c.consumer.CommitOffsets()
 	c.consumer.Close()
+	for _, p := range c.producers {
+		p.Close()
+	}
 	close(c.doneC)
 }
 

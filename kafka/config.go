@@ -149,3 +149,12 @@ func (c ConsumerTopicList) FilterByClusterTopic(clusterName, topicName string) (
 	}
 	return ConsumerTopic{}, fmt.Errorf("unable to find TopicConfig with cluster %s and topic %s", clusterName, topicName)
 }
+
+// HashKey converts topic to a string for use as a map key
+func (c Topic) HashKey() string {
+	output := c.Name + c.Cluster
+	for _, b := range c.BrokerList {
+		output += b
+	}
+	return output
+}

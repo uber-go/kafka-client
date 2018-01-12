@@ -99,7 +99,7 @@ func (c *Client) buildSaramaConsumerMap(
 
 		brokers := topicList[0].BrokerList
 		topicNames := topicList.TopicNames()
-		cc, err := cluster.NewConsumer(brokers, groupName, topicNames, config)
+		cc, err := consumer.NewSaramaConsumer(brokers, groupName, topicNames, config)
 		if err != nil {
 			c.logger.With(
 				zap.Error(err),
@@ -179,10 +179,10 @@ func (c *Client) buildSaramaClusters(
 
 // buildDLQMap creates a map of DLQ kafka Topic to DLQ producer based on the provided topicList and producerMap.
 // If a particular DLQ producer cannot be constructed, a noop DLQ producer will be used, which may result in data loss.
-func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, producerMap map[string]sarama.SyncProducer) map[kafka.Topic]consumer.DLQ {
-	output := make(map[kafka.Topic]consumer.DLQ)
+func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, producerMap map[string]sarama.SyncProducer) map[string]consumer.DLQ {
+	output := make(map[string]consumer.DLQ)
 	for _, topic := range topicList {
-		_, ok := output[topic.DLQ]
+		_, ok := output[topic.DLQ.HashKey()]
 		if ok {
 			continue
 		}
@@ -205,7 +205,7 @@ func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, producerMap map[
 			).Error("failed to get sarama producer so using noop DLQ producer, which may result in data loss")
 		}
 
-		output[topic.DLQ] = dlqProducer
+		output[topic.DLQ.HashKey()] = dlqProducer
 	}
 	return output
 }
@@ -296,7 +296,7 @@ func (c *Client) newSyncProducer(brokers []string) (sarama.SyncProducer, error) 
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 	config.Producer.Flush.Frequency = time.Millisecond * 500
-	return sarama.NewSyncProducer(brokers, config)
+	return consumer.NewSaramaProducer(brokers, config)
 }
 
 func buildOptions(config *kafka.ConsumerConfig) consumer.Options {

@@ -38,7 +38,7 @@ import (
 type (
 	ConsumerTestSuite struct {
 		suite.Suite
-		consumer       *consumerImpl
+		consumer       *clusterConsumer
 		saramaConsumer *mockSaramaConsumer
 		dlqProducer    *mockDLQProducer
 		topic          string
@@ -58,28 +58,42 @@ var testConsumerOptions = Options{
 	OffsetPolicy:           sarama.OffsetOldest,
 }
 
-var _ kafka.Consumer = (*consumerImpl)(nil)
+var _ kafka.Consumer = (*clusterConsumer)(nil)
 
 func TestConsumerTestSuite(t *testing.T) {
 	suite.Run(t, new(ConsumerTestSuite))
 }
 
 func (s *ConsumerTestSuite) SetupTest() {
-	s.topic = "unit-test"
-	s.dlqTopic = "unit-test-dlq"
+	topic := kafka.ConsumerTopic{
+		Topic: kafka.Topic{
+			Name:       "unit-test",
+			Cluster:    "production-cluster",
+			BrokerList: nil,
+		},
+		DLQ: kafka.Topic{
+			Name:       "unit-test-dlq",
+			Cluster:    "dlq-cluster",
+			BrokerList: nil,
+		},
+	}
+	s.topic = topic.Topic.Name
+	s.dlqTopic = topic.DLQ.Name
 	config := &kafka.ConsumerConfig{
-		Topic:       "unit-test",
+		TopicList:   []kafka.ConsumerTopic{topic},
 		GroupName:   "unit-test-cg",
 		Concurrency: 4,
 	}
-	config.DLQ.Name = s.dlqTopic
 	s.options = &testConsumerOptions
 	s.logger, _ = zap.NewDevelopment()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
+	msgCh := make(chan kafka.Message)
 	var err error
-	dlq := NewDLQ(s.dlqTopic, s.dlqProducer, tally.NoopScope, s.logger)
-	s.consumer, err = newConsumer(config, s.saramaConsumer, s.options, dlq, tally.NoopScope, s.logger)
+	dlq := map[string]DLQ{
+		topic.DLQ.HashKey(): NewDLQ(s.dlqTopic, topic.DLQ.Cluster, s.dlqProducer, tally.NoopScope, s.logger),
+	}
+	s.consumer, err = newClusterConsumer(topic.Cluster, config, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, tally.NoopScope, s.logger)
 	s.NoError(err)
 }
 
@@ -88,6 +102,25 @@ func (s *ConsumerTestSuite) TearDownTest() {
 	<-s.consumer.Closed()
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.isClosed() }, time.Second))
 	s.True(s.dlqProducer.isClosed())
+}
+
+func (s *ConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			for i := 0; i < count/concurrency; i++ {
+				m := <-s.consumer.Messages()
+				if nack {
+					m.Nack()
+					continue
+				}
+				m.Ack()
+			}
+			wg.Done()
+		}()
+	}
+	return &wg
 }
 
 func (s *ConsumerTestSuite) TestWithOnePartition() {
@@ -111,7 +144,7 @@ func (s *ConsumerTestSuite) TestWithOnePartition() {
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(1) == int64(100) }, time.Second))
 	s.Equal(0, s.dlqProducer.backlog())
 
-	cp := s.consumer.partitions.Get(1)
+	cp := s.consumer.partitions.Get(topicPartition{"unit-test", 1})
 	s.Equal(int64(100), s.saramaConsumer.offset(1), "wrong commit offset")
 	s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 
@@ -140,7 +173,7 @@ func (s *ConsumerTestSuite) TestWithManyPartitions() {
 	s.Equal(0, len(s.consumer.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.partitions.Get(1)
+		cp := s.consumer.partitions.Get(topicPartition{"unit-test", 1})
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}
@@ -201,28 +234,9 @@ func (s *ConsumerTestSuite) TestDLQ() {
 	s.Equal(0, len(s.consumer.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.partitions.Get(1)
+		cp := s.consumer.partitions.Get(topicPartition{"unit-test", 1})
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}
 	s.Equal(nPartitions*100, s.dlqProducer.backlog())
-}
-
-func (s *ConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
-	var wg sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			for i := 0; i < count/concurrency; i++ {
-				m := <-s.consumer.Messages()
-				if nack {
-					m.Nack()
-					continue
-				}
-				m.Ack()
-			}
-			wg.Done()
-		}()
-	}
-	return &wg
 }
