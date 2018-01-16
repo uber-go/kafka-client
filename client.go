@@ -76,17 +76,17 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, erro
 	topicList := c.resolveBrokers(config.TopicList)
 	clusterConsumerMap, saramaProducerMap, saramaConsumerMap := c.buildClusterConsumerMap(config, &opts, msgCh, topicList)
 	saramaClusters := c.buildSaramaClusters(saramaConsumerMap, saramaProducerMap)
-	return consumer.New(config, clusterConsumerMap, &saramaClusters, msgCh, c.tally, c.logger)
+	return consumer.New(config, clusterConsumerMap, saramaClusters, msgCh, c.tally, c.logger)
 }
 
 // buildSaramaClusters builds a threadsafe SaramaClusters map based on the
 // provided consumerMap and producerMap.
-// For each SaramaCluster found in the output SaramaClusters map,
+// For each SaramaCluster found in the input SaramaClusters map,
 // the Consumer or Producer field may be null if there was no corresponding
 // consumer or producer found in the provided consumerMap or producerMap.
 func (c *Client) buildSaramaClusters(
 	consumerMap map[string]consumer.SaramaConsumer,
-	producerMap map[string]sarama.SyncProducer) consumer.SaramaClusters {
+	producerMap map[string]sarama.SyncProducer) map[string]*consumer.SaramaCluster {
 	clusters := make(map[string]*consumer.SaramaCluster)
 	for clusterName, sc := range consumerMap {
 		saramaCluster, ok := clusters[clusterName]
@@ -105,9 +105,7 @@ func (c *Client) buildSaramaClusters(
 		saramaCluster.Producer = producer
 		clusters[clusterName] = saramaCluster
 	}
-	return consumer.SaramaClusters{
-		Clusters: clusters,
-	}
+	return clusters
 }
 
 // buildClusterConsumerMap returns a map of kafka ClusterConsumer per cluster to consume as provided by the consumerMap argument.

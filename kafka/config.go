@@ -129,17 +129,6 @@ func (c ConsumerTopicList) TopicNames() []string {
 	return output
 }
 
-// FilterByCluster returns a new ConsumerTopicList with ConsumerTopic to be consumed from the specified cluster.
-func (c ConsumerTopicList) FilterByCluster(clusterName string) ConsumerTopicList {
-	output := make([]ConsumerTopic, 0, len(c))
-	for _, topic := range c {
-		if clusterName == topic.Cluster {
-			output = append(output, topic)
-		}
-	}
-	return output
-}
-
 // FilterByClusterTopic returns the ConsumerTopic for the cluster, topic pair.
 func (c ConsumerTopicList) FilterByClusterTopic(clusterName, topicName string) (ConsumerTopic, error) {
 	for _, topic := range c {
@@ -153,8 +142,5 @@ func (c ConsumerTopicList) FilterByClusterTopic(clusterName, topicName string) (
 // HashKey converts topic to a string for use as a map key
 func (c Topic) HashKey() string {
 	output := c.Name + c.Cluster
-	for _, b := range c.BrokerList {
-		output += b
-	}
 	return output
 }

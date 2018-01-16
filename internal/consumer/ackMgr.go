@@ -128,7 +128,7 @@ func (mgr *ackManager) CommitLevel() int64 {
 		if err != list.ErrEmpty {
 			mgr.logger.Fatal("commitLevel error: list peekHead failed", zap.Error(err))
 		}
-		return mgr.unackedSeqList.lastValue
+		return mgr.unackedSeqList.LastValue()
 	}
 	return unacked - 1
 }

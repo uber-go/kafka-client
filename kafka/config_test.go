@@ -79,10 +79,6 @@ func (s *ConsumerConfigTestSuite) TestDLQClusterTopicMap() {
 	s.Equal(expected, s.config.TopicList.DLQClusterTopicMap())
 }
 
-func (s *ConsumerConfigTestSuite) TestFilterByCluster() {
-	s.EqualValues([]ConsumerTopic{s.topic1}, s.config.TopicList.FilterByCluster("cluster1"))
-}
-
 func (s *ConsumerConfigTestSuite) TestFilterByClusterTopic() {
 	topic, err := s.config.TopicList.FilterByClusterTopic("cluster1", "topic1")
 	s.NoError(err)
@@ -96,13 +92,12 @@ func (s *ConsumerConfigTestSuite) TestFilterByClusterTopic() {
 
 func (s *ConsumerConfigTestSuite) TestHashKey() {
 	s.Equal(Topic{
-		Name:       "topic1",
-		Cluster:    "cluster1",
-		BrokerList: []string{"broker1", "broker2"},
+		Name:    "topic1",
+		Cluster: "cluster1",
 	}.HashKey(), s.topic1.HashKey())
 
 	s.NotEqual(Topic{
 		Name:    "topic1",
-		Cluster: "cluster1",
+		Cluster: "cluster2",
 	}.HashKey(), s.topic1.HashKey())
 }

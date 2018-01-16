@@ -27,23 +27,14 @@ import (
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
 	"go.uber.org/zap"
-	"sync"
 )
 
 type (
 	// SaramaCluster is a cluster specific threadsafe container for Sarama consumers and producers.
 	// If you access the Consumer/Producer type directly, you are responsible for acquiring the RWLock.
 	SaramaCluster struct {
-		sync.RWMutex
 		Consumer SaramaConsumer
 		Producer sarama.SyncProducer
-	}
-
-	// SaramaClusters is a thredsafe map of SaramaClusters.
-	// If you access the Consumer/Producer type directly, you are responsible for acquiring the RWLock.
-	SaramaClusters struct {
-		sync.RWMutex
-		Clusters map[string]*SaramaCluster
 	}
 
 	// SaramaConsumer is an interface for external consumer library (sarama)

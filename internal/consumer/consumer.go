@@ -36,15 +36,15 @@ import (
 type (
 	// multiConsumerMap is a map that contains multiple kafka consumers
 	multiConsumerMap struct {
-		name              string
-		topics            kafka.ConsumerTopicList
-		consumers         map[string]kafka.Consumer
-		saramaConnections *SaramaClusters
-		msgCh             chan kafka.Message
-		doneC             chan struct{}
-		tally             tally.Scope
-		logger            *zap.Logger
-		lifecycle         *util.RunLifecycle
+		name           string
+		topics         kafka.ConsumerTopicList
+		consumers      map[string]kafka.Consumer
+		saramaClusters map[string]*SaramaCluster
+		msgCh          chan kafka.Message
+		doneC          chan struct{}
+		tally          tally.Scope
+		logger         *zap.Logger
+		lifecycle      *util.RunLifecycle
 	}
 
 	topicPartitionMap struct {
@@ -87,30 +87,30 @@ type (
 func New(
 	config *kafka.ConsumerConfig,
 	consumers map[string]kafka.Consumer,
-	sarama *SaramaClusters,
+	saramaClusters map[string]*SaramaCluster,
 	msgCh chan kafka.Message,
 	scope tally.Scope,
 	log *zap.Logger) (kafka.Consumer, error) {
-	return newMultiConsumerMap(config, consumers, sarama, msgCh, scope, log)
+	return newMultiConsumerMap(config, consumers, saramaClusters, msgCh, scope, log)
 }
 
 func newMultiConsumerMap(
 	config *kafka.ConsumerConfig,
 	consumers map[string]kafka.Consumer,
-	sarama *SaramaClusters,
+	saramaClusters map[string]*SaramaCluster,
 	msgCh chan kafka.Message,
 	scope tally.Scope,
 	log *zap.Logger,
 ) (*multiConsumerMap, error) {
 	return &multiConsumerMap{
-		name:              config.GroupName,
-		topics:            config.TopicList,
-		consumers:         consumers,
-		saramaConnections: sarama,
-		msgCh:             msgCh,
-		tally:             scope,
-		logger:            log,
-		lifecycle:         util.NewRunLifecycle(config.GroupName+"-consumer", log),
+		name:           config.GroupName,
+		topics:         config.TopicList,
+		consumers:      consumers,
+		saramaClusters: saramaClusters,
+		msgCh:          msgCh,
+		tally:          scope,
+		logger:         log,
+		lifecycle:      util.NewRunLifecycle(config.GroupName+"-consumer", log),
 	}, nil
 }
 
@@ -198,18 +198,14 @@ func (c *multiConsumerMap) Stop() {
 			consumer.Stop()
 		}
 
-		c.saramaConnections.Lock()
-		for _, clusterConnection := range c.saramaConnections.Clusters {
-			clusterConnection.Lock()
-			if clusterConnection.Consumer != nil {
-				clusterConnection.Consumer.Close()
+		for _, sc := range c.saramaClusters {
+			if sc.Consumer != nil {
+				sc.Consumer.Close()
 			}
-			if clusterConnection.Producer != nil {
-				clusterConnection.Producer.Close()
+			if sc.Producer != nil {
+				sc.Producer.Close()
 			}
-			clusterConnection.Unlock()
 		}
-		c.saramaConnections.Unlock()
 		close(c.doneC)
 	})
 }
@@ -290,7 +286,7 @@ func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
 	c.logger.Info("new partition", zap.String("topic", pc.Topic()), zap.Int32("partition", pc.Partition()))
 
 	// TODO (gteo): Consider using a blocking dlq implementation or throwing fatal error
-	dlq, err := c.getDLQ(pc.Topic(), c.cluster)
+	dlq, err := c.getDLQ(c.cluster, pc.Topic())
 	if err != nil {
 		c.logger.With(
 			zap.Error(err),
@@ -305,7 +301,7 @@ func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
 	p.Start()
 }
 
-func (c *clusterConsumer) getDLQ(topic, cluster string) (DLQ, error) {
+func (c *clusterConsumer) getDLQ(cluster, topic string) (DLQ, error) {
 	consumerTopic, err := c.topics.FilterByClusterTopic(cluster, topic)
 	if err != nil {
 		return nil, err

@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	cluster "github.com/bsm/sarama-cluster"
+	"github.com/bsm/sarama-cluster"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
@@ -38,6 +38,10 @@ import (
 type (
 	ConsumerTestSuite struct {
 		suite.Suite
+		consumerTestSuite
+	}
+
+	consumerTestSuite struct {
 		consumer       *clusterConsumer
 		saramaConsumer *mockSaramaConsumer
 		dlqProducer    *mockDLQProducer
@@ -85,7 +89,7 @@ func (s *ConsumerTestSuite) SetupTest() {
 		Concurrency: 4,
 	}
 	s.options = &testConsumerOptions
-	s.logger, _ = zap.NewDevelopment()
+	s.logger = zap.NewNop()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
 	msgCh := make(chan kafka.Message)
@@ -104,7 +108,7 @@ func (s *ConsumerTestSuite) TearDownTest() {
 	s.True(s.dlqProducer.isClosed())
 }
 
-func (s *ConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
+func (s *consumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
