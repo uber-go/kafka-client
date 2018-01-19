@@ -63,13 +63,13 @@ func (s *ConsumerConfigTestSuite) SetupTest() {
 }
 
 func (s *ConsumerConfigTestSuite) TestFilterByClusterTopic() {
-	topic, err := s.config.TopicList.FilterByClusterTopic("cluster1", "topic1")
+	topic, err := s.config.TopicList.GetConsumerTopicByClusterTopic("cluster1", "topic1")
 	s.NoError(err)
 	s.Equal(s.topic1, topic)
 
-	_, err = s.config.TopicList.FilterByClusterTopic("cluster3", "topic1")
+	_, err = s.config.TopicList.GetConsumerTopicByClusterTopic("cluster3", "topic1")
 	s.Error(err)
-	_, err = s.config.TopicList.FilterByClusterTopic("cluster1", "topic3")
+	_, err = s.config.TopicList.GetConsumerTopicByClusterTopic("cluster1", "topic3")
 	s.Error(err)
 }
 

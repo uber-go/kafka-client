@@ -205,3 +205,11 @@ func (s *ClientTestSuite) TestBuildSaramaProducerMap() {
 	_, err = s.client.buildSaramaConsumer(nil, s.config.GroupName, nil)
 	s.Error(err)
 }
+
+func (s *ClientTestSuite) TestValidateTopicListFromSingleCluster() {
+	topicList := s.config.TopicList
+	s.NoError(validateTopicListFromSingleCluster(topicList))
+	s.Error(validateTopicListFromSingleCluster(nil))
+	topicList = append(topicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "foo", Cluster: "bar"}})
+	s.Error(validateTopicListFromSingleCluster(topicList))
+}

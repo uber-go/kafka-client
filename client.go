@@ -71,7 +71,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kaf
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
 	var err error
 	topicList := config.TopicList
-	if err := topicList.ValidateSingleCluster(); err != nil {
+	if err = validateTopicListFromSingleCluster(topicList); err != nil {
 		return nil, err
 	}
 	clusterName := topicList[0].Cluster
@@ -89,11 +89,23 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, erro
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			saramaConsumer.Close()
+		}
+	}()
 
 	saramaProducerMap, err := c.buildSaramaProducerMap(topicList)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			for _, p := range saramaProducerMap {
+				p.Close()
+			}
+		}
+	}()
 
 	dlqMap, err := c.buildDLQMap(topicList, saramaProducerMap)
 	if err != nil {
@@ -114,7 +126,7 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, erro
 }
 
 func (c *Client) buildSaramaConsumer(topicList kafka.ConsumerTopicList, consumergroup string, cfg *cluster.Config) (consumer.SaramaConsumer, error) {
-	if err := topicList.ValidateSingleCluster(); err != nil {
+	if err := validateTopicListFromSingleCluster(topicList); err != nil {
 		return nil, err
 	}
 	brokerList := topicList[0].BrokerList
@@ -221,4 +233,17 @@ func clientID() string {
 		name = "unknown-kafka-client"
 	}
 	return name
+}
+
+func validateTopicListFromSingleCluster(c kafka.ConsumerTopicList) error {
+	if len(c) == 0 {
+		return fmt.Errorf("empty topic list")
+	}
+	cluster := c[0].Cluster
+	for _, topic := range c {
+		if topic.Cluster != cluster {
+			return fmt.Errorf("found two different clusters %s and %s in config", topic.Cluster, cluster)
+		}
+	}
+	return nil
 }

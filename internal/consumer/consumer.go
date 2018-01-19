@@ -198,7 +198,7 @@ func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
 }
 
 func (c *clusterConsumer) getDLQ(cluster, topic string) (DLQ, error) {
-	consumerTopic, err := c.topics.FilterByClusterTopic(cluster, topic)
+	consumerTopic, err := c.topics.GetConsumerTopicByClusterTopic(cluster, topic)
 	if err != nil {
 		return nil, err
 	}
