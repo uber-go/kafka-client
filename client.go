@@ -69,18 +69,18 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kaf
 
 // NewConsumer returns a new instance of kafka consumer
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
-	if err := config.Validate(); err != nil {
+	var err error
+	topicList := config.TopicList
+	if err := topicList.ValidateSingleCluster(); err != nil {
 		return nil, err
 	}
-
-	// config.Validate checks that TopicList is not empty
-	clusterName := config.TopicList[0].Cluster
+	clusterName := topicList[0].Cluster
 
 	opts := buildOptions(config)
 	saramaConfig := buildSaramaConfig(&opts)
 	msgCh := make(chan kafka.Message, opts.RcvBufferSize)
 
-	topicList, err := c.resolveBrokers(config.TopicList)
+	topicList, err = c.resolveBrokers(topicList)
 	if err != nil {
 		return nil, err
 	}

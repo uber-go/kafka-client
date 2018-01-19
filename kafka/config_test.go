@@ -62,23 +62,6 @@ func (s *ConsumerConfigTestSuite) SetupTest() {
 	}
 }
 
-func (s *ConsumerConfigTestSuite) TestClusterTopicMap() {
-	expected := map[string]ConsumerTopicList{
-		"cluster1": []ConsumerTopic{s.topic1},
-		"cluster2": []ConsumerTopic{s.topic2},
-	}
-
-	s.Equal(expected, s.config.TopicList.ClusterTopicMap())
-}
-
-func (s *ConsumerConfigTestSuite) TestDLQClusterTopicMap() {
-	expected := map[string]ConsumerTopicList{
-		"dlq_cluster1": []ConsumerTopic{s.topic1, s.topic2},
-	}
-
-	s.Equal(expected, s.config.TopicList.DLQClusterTopicMap())
-}
-
 func (s *ConsumerConfigTestSuite) TestFilterByClusterTopic() {
 	topic, err := s.config.TopicList.FilterByClusterTopic("cluster1", "topic1")
 	s.NoError(err)

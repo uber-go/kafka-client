@@ -90,14 +90,6 @@ type (
 	}
 )
 
-// Validate the ConsumerConfig
-func (c ConsumerConfig) Validate() (err error) {
-	if err = c.TopicList.ValidateSingleCluster(); err != nil {
-		return
-	}
-	return
-}
-
 // ValidateSingleCluster returns error if there is more than one cluster found in the ConsumerTopicList
 func (c ConsumerTopicList) ValidateSingleCluster() error {
 	if len(c) == 0 {
@@ -110,36 +102,6 @@ func (c ConsumerTopicList) ValidateSingleCluster() error {
 		}
 	}
 	return nil
-}
-
-// ClusterTopicMap returns a list of ConsumerTopics for each cluster.
-func (c ConsumerTopicList) ClusterTopicMap() map[string]ConsumerTopicList {
-	output := make(map[string]ConsumerTopicList)
-	for _, topic := range c {
-		clusterName := topic.Cluster
-		topicList, ok := output[clusterName]
-		if !ok {
-			topicList = make([]ConsumerTopic, 0)
-		}
-		topicList = append(topicList, topic)
-		output[clusterName] = topicList
-	}
-	return output
-}
-
-// DLQClusterTopicMap returns a list of ConsumerTopics for each DLQ cluster.
-func (c ConsumerTopicList) DLQClusterTopicMap() map[string]ConsumerTopicList {
-	output := make(map[string]ConsumerTopicList)
-	for _, topic := range c {
-		clusterName := topic.DLQ.Cluster
-		topicList, ok := output[clusterName]
-		if !ok {
-			topicList = make([]ConsumerTopic, 0)
-		}
-		topicList = append(topicList, topic)
-		output[clusterName] = topicList
-	}
-	return output
 }
 
 // TopicNames returns the list of topics to consume as a string array.
