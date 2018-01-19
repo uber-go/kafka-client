@@ -34,19 +34,6 @@ import (
 )
 
 type (
-	// multiConsumerMap is a map that contains multiple kafka consumers
-	multiConsumerMap struct {
-		name           string
-		topics         kafka.ConsumerTopicList
-		consumers      map[string]kafka.Consumer
-		saramaClusters map[string]*SaramaCluster
-		msgCh          chan kafka.Message
-		doneC          chan struct{}
-		tally          tally.Scope
-		logger         *zap.Logger
-		lifecycle      *util.RunLifecycle
-	}
-
 	topicPartitionMap struct {
 		topicPartitions map[topicPartition]*partitionConsumer
 	}
@@ -74,50 +61,10 @@ type (
 	}
 )
 
-// New returns a new kafka consumer for a given topic
-// the returned consumer can be used to consume and process
-// messages across multiple go routines. The number of routines
-// that will process messages in parallel MUST be pre-configured
-// through the ConsumerConfig. And after each message is processed,
-// either msg.Ack or msg.Nack must be called to advance the offsets
-//
-// During failures / partition rebalances, this consumer does a
-// best effort at avoiding duplicates, but the application must be
-// designed for idempotency
-func New(
-	config *kafka.ConsumerConfig,
-	consumers map[string]kafka.Consumer,
-	saramaClusters map[string]*SaramaCluster,
-	msgCh chan kafka.Message,
-	scope tally.Scope,
-	log *zap.Logger) (kafka.Consumer, error) {
-	return newMultiConsumerMap(config, consumers, saramaClusters, msgCh, scope, log)
-}
-
-func newMultiConsumerMap(
-	config *kafka.ConsumerConfig,
-	consumers map[string]kafka.Consumer,
-	saramaClusters map[string]*SaramaCluster,
-	msgCh chan kafka.Message,
-	scope tally.Scope,
-	log *zap.Logger,
-) (*multiConsumerMap, error) {
-	return &multiConsumerMap{
-		name:           config.GroupName,
-		topics:         config.TopicList,
-		consumers:      consumers,
-		saramaClusters: saramaClusters,
-		msgCh:          msgCh,
-		tally:          scope,
-		logger:         log,
-		lifecycle:      util.NewRunLifecycle(config.GroupName+"-consumer", log),
-	}, nil
-}
-
 // NewClusterConsumer returns a Kafka Consumer that consumes from a single Kafka cluster
 func NewClusterConsumer(
+	groupName string,
 	cluster string,
-	config *kafka.ConsumerConfig,
 	options *Options,
 	topics kafka.ConsumerTopicList,
 	msgCh chan kafka.Message,
@@ -127,8 +74,8 @@ func NewClusterConsumer(
 	logger *zap.Logger,
 ) (kafka.Consumer, error) {
 	return newClusterConsumer(
+		groupName,
 		cluster,
-		config,
 		options,
 		topics,
 		msgCh,
@@ -140,8 +87,8 @@ func NewClusterConsumer(
 }
 
 func newClusterConsumer(
+	groupName string,
 	cluster string,
-	config *kafka.ConsumerConfig,
 	options *Options,
 	topics kafka.ConsumerTopicList,
 	msgCh chan kafka.Message,
@@ -151,7 +98,7 @@ func newClusterConsumer(
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
 	return &clusterConsumer{
-		name:       config.GroupName,
+		name:       groupName,
 		topics:     topics,
 		cluster:    cluster,
 		msgCh:      msgCh,
@@ -163,59 +110,8 @@ func newClusterConsumer(
 		logger:     logger,
 		stopC:      make(chan struct{}),
 		doneC:      make(chan struct{}),
-		lifecycle:  util.NewRunLifecycle(config.GroupName+"-consumer-"+cluster, logger),
+		lifecycle:  util.NewRunLifecycle(groupName+"-consumer-"+cluster, logger),
 	}, nil
-}
-
-func (c *multiConsumerMap) Name() string {
-	return c.name
-}
-
-func (c *multiConsumerMap) Topics() []string {
-	return c.topics.TopicNames()
-}
-
-func (c *multiConsumerMap) Start() error {
-	return c.lifecycle.Start(func() error {
-		errAcc := newErrorAccumulator()
-		for clusterName, consumer := range c.consumers {
-			if err := consumer.Start(); err != nil {
-				c.logger.With(
-					zap.Error(err),
-					zap.String("cluster", clusterName),
-				).Error("failed to start cluster consumer")
-				errAcc = append(errAcc, err)
-				continue
-			}
-		}
-		return errAcc.ToError()
-	})
-}
-
-func (c *multiConsumerMap) Stop() {
-	c.lifecycle.Stop(func() {
-		for _, consumer := range c.consumers {
-			consumer.Stop()
-		}
-
-		for _, sc := range c.saramaClusters {
-			if sc.Consumer != nil {
-				sc.Consumer.Close()
-			}
-			if sc.Producer != nil {
-				sc.Producer.Close()
-			}
-		}
-		close(c.doneC)
-	})
-}
-
-func (c *multiConsumerMap) Closed() <-chan struct{} {
-	return c.doneC
-}
-
-func (c *multiConsumerMap) Messages() <-chan kafka.Message {
-	return c.msgCh
 }
 
 // Name returns the name of this consumer group

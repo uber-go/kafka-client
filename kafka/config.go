@@ -90,6 +90,28 @@ type (
 	}
 )
 
+// Validate the ConsumerConfig
+func (c ConsumerConfig) Validate() (err error) {
+	if err = c.TopicList.ValidateSingleCluster(); err != nil {
+		return
+	}
+	return
+}
+
+// ValidateSingleCluster returns error if there is more than one cluster found in the ConsumerTopicList
+func (c ConsumerTopicList) ValidateSingleCluster() error {
+	if len(c) == 0 {
+		return fmt.Errorf("empty topic list")
+	}
+	cluster := c[0].Cluster
+	for _, topic := range c {
+		if topic.Cluster != cluster {
+			return fmt.Errorf("found two different clusters %s and %s in config", topic.Cluster, cluster)
+		}
+	}
+	return nil
+}
+
 // ClusterTopicMap returns a list of ConsumerTopics for each cluster.
 func (c ConsumerTopicList) ClusterTopicMap() map[string]ConsumerTopicList {
 	output := make(map[string]ConsumerTopicList)

@@ -37,12 +37,11 @@ import (
 type (
 	ClientTestSuite struct {
 		suite.Suite
-		config                     *kafka.ConsumerConfig
-		client                     *Client
-		saramaConsumerConstructor  *saramaConsumerConstructorMock
-		saramaProducerConstructor  *saramaProducerConstructorMock
-		clusterConsumerConstructor *clusterConsumerConstructorMock
-		resolverMock               *resolverMock
+		config                    *kafka.ConsumerConfig
+		client                    *Client
+		saramaConsumerConstructor *saramaConsumerConstructorMock
+		saramaProducerConstructor *saramaProducerConstructorMock
+		resolverMock              *resolverMock
 	}
 
 	resolverMock struct {
@@ -62,11 +61,6 @@ type (
 		errRet map[string]error
 	}
 )
-
-func (m *clusterConsumerConstructorMock) f(cluster string, _ *kafka.ConsumerConfig, _ *consumer.Options, _ kafka.ConsumerTopicList, _ chan kafka.Message, _ consumer.SaramaConsumer, _ map[string]consumer.DLQ, _ tally.Scope, _ *zap.Logger) (ret kafka.Consumer, err error) {
-	err = m.errRet[cluster]
-	return
-}
 
 func (m *saramaConsumerConstructorMock) f(brokers []string, _ string, _ []string, _ *cluster.Config) (sc consumer.SaramaConsumer, err error) {
 	key := ""
@@ -147,7 +141,6 @@ func (s *ClientTestSuite) SetupTest() {
 		},
 	}
 
-	s.clusterConsumerConstructor = &clusterConsumerConstructorMock{errRet: make(map[string]error)}
 	s.saramaConsumerConstructor = &saramaConsumerConstructorMock{errRet: make(map[string]error)}
 	s.saramaProducerConstructor = &saramaProducerConstructorMock{errRet: make(map[string]error)}
 
@@ -155,7 +148,6 @@ func (s *ClientTestSuite) SetupTest() {
 		tally:                         tally.NoopScope,
 		logger:                        zap.NewNop(),
 		resolver:                      s.resolverMock,
-		clusterConsumerConstructor:    s.clusterConsumerConstructor.f,
 		saramaSyncProducerConstructor: s.saramaProducerConstructor.f,
 		saramaConsumerConstructor:     s.saramaConsumerConstructor.f,
 	}
@@ -183,31 +175,33 @@ func (s *ClientTestSuite) TestBuildSaramaConfig() {
 }
 
 func (s *ClientTestSuite) TestResolveBroker() {
-	topicList := append(s.config.TopicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}, DLQ: kafka.Topic{Name: "t1", Cluster: "", BrokerList: nil}})
-	topicList = append(topicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "t1", Cluster: "production-cluster", BrokerList: nil}, DLQ: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}})
-	for _, topic := range topicList {
-		topic.BrokerList = nil
-		topic.DLQ.BrokerList = nil
-	}
+	topicList := s.config.TopicList
+	outputTopics, err := s.client.resolveBrokers(topicList)
+	s.NoError(err)
+	s.Equal(topicList, outputTopics)
 
-	outputTopics := s.client.resolveBrokers(topicList)
-	s.Equal(2, len(outputTopics))
-	s.Equal([]string{"b1"}, outputTopics[0].BrokerList)
-	s.Equal([]string{"d1"}, outputTopics[0].DLQ.BrokerList)
+	topicList = append(topicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}, DLQ: kafka.Topic{Name: "t1", Cluster: "", BrokerList: nil}})
+	_, err = s.client.resolveBrokers(topicList)
+	s.Error(err)
 }
 
-func (s *ClientTestSuite) TestBuildClusterConsumerMap() {
-	config := *s.config
-	config.TopicList = nil
+func (s *ClientTestSuite) TestBuildSaramaConsumer() {
+	topicList := s.config.TopicList
+	_, err := s.client.buildSaramaConsumer(topicList, s.config.GroupName, nil)
+	s.NoError(err)
 
-	topicList := append(s.config.TopicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}, DLQ: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}})
-	topicList = append(topicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "t1", Cluster: "production-cluster-2", BrokerList: nil}, DLQ: kafka.Topic{Name: "t1", Cluster: "bad-cluster", BrokerList: nil}})
+	_, err = s.client.buildSaramaConsumer(nil, s.config.GroupName, nil)
+	s.Error(err)
+}
 
-	s.saramaProducerConstructor.errRet["bad-cluster"] = fmt.Errorf("error")
-	s.saramaConsumerConstructor.errRet["bad-cluster"] = fmt.Errorf("error")
+func (s *ClientTestSuite) TestBuildSaramaProducerMap() {
+	topicList := s.config.TopicList
+	// Adding a topic with no DLQ set should not through error.
+	// It is the users responsibility to ensure that they do not nack if they do not enable DLQ.
+	topicList = append(topicList, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "topic3", Cluster: "cluster1", BrokerList: nil}, DLQ: kafka.Topic{Name: "", Cluster: "", BrokerList: nil}})
+	_, err := s.client.buildSaramaProducerMap(topicList)
+	s.NoError(err)
 
-	clusterConsumerMap, saramaProducers, saramaConsumers := s.client.buildClusterConsumerMap(&config, &defaultOptions, nil, topicList)
-	s.Equal(1, len(clusterConsumerMap))
-	s.Equal(1, len(saramaProducers))
-	s.Equal(1, len(saramaConsumers))
+	_, err = s.client.buildSaramaConsumer(nil, s.config.GroupName, nil)
+	s.Error(err)
 }

@@ -30,13 +30,6 @@ import (
 )
 
 type (
-	// SaramaCluster is a cluster specific threadsafe container for Sarama consumers and producers.
-	// If you access the Consumer/Producer type directly, you are responsible for acquiring the RWLock.
-	SaramaCluster struct {
-		Consumer SaramaConsumer
-		Producer sarama.SyncProducer
-	}
-
 	// SaramaConsumer is an interface for external consumer library (sarama)
 	SaramaConsumer interface {
 		Close() error

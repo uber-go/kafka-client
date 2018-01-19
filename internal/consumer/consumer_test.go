@@ -97,7 +97,7 @@ func (s *ConsumerTestSuite) SetupTest() {
 	dlq := map[string]DLQ{
 		topic.DLQ.HashKey(): NewDLQ(s.dlqTopic, topic.DLQ.Cluster, s.dlqProducer, tally.NoopScope, s.logger),
 	}
-	s.consumer, err = newClusterConsumer(topic.Cluster, config, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, tally.NoopScope, s.logger)
+	s.consumer, err = newClusterConsumer(config.GroupName, topic.Cluster, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, tally.NoopScope, s.logger)
 	s.NoError(err)
 }
 
