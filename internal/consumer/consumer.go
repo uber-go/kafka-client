@@ -22,6 +22,7 @@ package consumer
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	cluster "github.com/bsm/sarama-cluster"
@@ -33,83 +34,98 @@ import (
 )
 
 type (
-	partitionMap struct {
-		partitions map[int32]*partitionConsumer
+	topicPartitionMap struct {
+		topicPartitions map[topicPartition]*partitionConsumer
 	}
-	// consumerImpl is an implementation of kafka consumer
-	consumerImpl struct {
+
+	topicPartition struct {
+		topic     string
+		partition int32
+	}
+
+	// clusterConsumer is an implementation of kafka consumer that consumes messages from a single cluster
+	clusterConsumer struct {
 		name       string
-		topic      string
-		dlqTopic   string
-		consumer   SaramaConsumer
-		partitions partitionMap
+		topics     kafka.ConsumerTopicList
+		cluster    string
 		msgCh      chan kafka.Message
-		dlq        DLQ
+		consumer   SaramaConsumer
+		producers  map[string]DLQ // Map of DLQ topic -> DLQ
+		partitions topicPartitionMap
+		options    *Options
 		tally      tally.Scope
 		logger     *zap.Logger
-		options    *Options
 		lifecycle  *util.RunLifecycle
 		stopC      chan struct{}
 		doneC      chan struct{}
 	}
 )
 
-// New returns a new kafka consumer for a given topic
-// the returned consumer can be used to consume and process
-// messages across multiple go routines. The number of routines
-// that will process messages in parallel MUST be pre-configured
-// through the ConsumerConfig. And after each message is processed,
-// either msg.Ack or msg.Nack must be called to advance the offsets
-//
-// During failures / partition rebalances, this consumer does a
-// best effort at avoiding duplicates, but the application must be
-// designed for idempotency
-func New(
-	config *kafka.ConsumerConfig,
-	consumer SaramaConsumer,
+// NewClusterConsumer returns a Kafka Consumer that consumes from a single Kafka cluster
+func NewClusterConsumer(
+	groupName string,
+	cluster string,
 	options *Options,
-	dlq DLQ,
-	scope tally.Scope,
-	log *zap.Logger) (kafka.Consumer, error) {
-	return newConsumer(config, consumer, options, dlq, scope, log)
+	topics kafka.ConsumerTopicList,
+	msgCh chan kafka.Message,
+	consumer SaramaConsumer,
+	producers map[string]DLQ,
+	tally tally.Scope,
+	logger *zap.Logger,
+) (kafka.Consumer, error) {
+	return newClusterConsumer(
+		groupName,
+		cluster,
+		options,
+		topics,
+		msgCh,
+		consumer,
+		producers,
+		tally,
+		logger,
+	)
 }
 
-// newConsumer is package private constructor that actually does the construction
-func newConsumer(config *kafka.ConsumerConfig,
-	consumer SaramaConsumer,
+func newClusterConsumer(
+	groupName string,
+	cluster string,
 	options *Options,
-	dlq DLQ,
-	scope tally.Scope,
-	log *zap.Logger) (*consumerImpl, error) {
-	return &consumerImpl{
-		name:       config.GroupName,
-		topic:      config.Topic,
-		dlqTopic:   config.DLQ.Name,
+	topics kafka.ConsumerTopicList,
+	msgCh chan kafka.Message,
+	consumer SaramaConsumer,
+	producers map[string]DLQ,
+	tally tally.Scope,
+	logger *zap.Logger,
+) (*clusterConsumer, error) {
+	return &clusterConsumer{
+		name:       groupName,
+		topics:     topics,
+		cluster:    cluster,
+		msgCh:      msgCh,
 		consumer:   consumer,
-		dlq:        dlq,
-		msgCh:      make(chan kafka.Message, options.RcvBufferSize),
+		producers:  producers,
 		partitions: newPartitionMap(),
-		tally:      scope.Tagged(map[string]string{"topic": config.Topic}),
-		logger:     log,
 		options:    options,
+		tally:      tally,
+		logger:     logger,
 		stopC:      make(chan struct{}),
 		doneC:      make(chan struct{}),
-		lifecycle:  util.NewRunLifecycle(config.Topic+"-consumer", log),
+		lifecycle:  util.NewRunLifecycle(groupName+"-consumer-"+cluster, logger),
 	}, nil
 }
 
 // Name returns the name of this consumer group
-func (c *consumerImpl) Name() string {
+func (c *clusterConsumer) Name() string {
 	return c.name
 }
 
 // Topics returns the topics that this consumer is subscribed to
-func (c *consumerImpl) Topics() []string {
-	return []string{c.topic}
+func (c *clusterConsumer) Topics() []string {
+	return c.topics.TopicNames()
 }
 
 // Start starts the consumer
-func (c *consumerImpl) Start() error {
+func (c *clusterConsumer) Start() error {
 	return c.lifecycle.Start(func() error {
 		go c.eventLoop()
 		c.tally.Counter(metrics.KafkaConsumerStarted).Inc(1)
@@ -118,27 +134,27 @@ func (c *consumerImpl) Start() error {
 }
 
 // Stop stops the consumer
-func (c *consumerImpl) Stop() {
+func (c *clusterConsumer) Stop() {
 	c.lifecycle.Stop(func() {
-		c.logger.Info("consumer shutting down", zap.String("topic", c.topic))
+		c.logger.Info("consumer shutting down")
 		close(c.stopC)
 		c.tally.Counter(metrics.KafkaConsumerStopped).Inc(1)
 	})
 }
 
-// Closed returns a channel which will closed after this consumer is shutown
-func (c *consumerImpl) Closed() <-chan struct{} {
+// Closed returns a channel which will closed after this consumer is shutdown
+func (c *clusterConsumer) Closed() <-chan struct{} {
 	return c.doneC
 }
 
 // Messages returns the message channel for this consumer
-func (c *consumerImpl) Messages() <-chan kafka.Message {
+func (c *clusterConsumer) Messages() <-chan kafka.Message {
 	return c.msgCh
 }
 
 // eventLoop is the main event loop for this consumer
-func (c *consumerImpl) eventLoop() {
-	c.logger.Info("consumer started", zap.String("topic", c.topic))
+func (c *clusterConsumer) eventLoop() {
+	c.logger.Info("consumer started")
 	for {
 		select {
 		case pc := <-c.consumer.Partitions():
@@ -146,10 +162,10 @@ func (c *consumerImpl) eventLoop() {
 		case n := <-c.consumer.Notifications():
 			c.handleNotification(n)
 		case err := <-c.consumer.Errors():
-			c.logger.Error("consumer error", zap.String("topic", c.topic), zap.Error(err))
+			c.logger.Error("consumer error", zap.Error(err))
 		case <-c.stopC:
 			c.shutdown()
-			c.logger.Info("consumer stopped", zap.String("topic", c.topic))
+			c.logger.Info("consumer stopped")
 			return
 		}
 	}
@@ -157,42 +173,74 @@ func (c *consumerImpl) eventLoop() {
 
 // addPartition adds a new partition. If the partition already exist,
 // it is first stopped before overwriting it with the new partition
-func (c *consumerImpl) addPartition(pc cluster.PartitionConsumer) {
-	old := c.partitions.Get(pc.Partition())
+func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
+	old := c.partitions.Get(topicPartition{pc.Topic(), pc.Partition()})
 	if old != nil {
 		old.Stop()
-		c.partitions.Delete(pc.Partition())
+		c.partitions.Delete(topicPartition{pc.Topic(), pc.Partition()})
 	}
-	c.logger.Info("new partition", zap.String("topic", c.topic), zap.Int32("id", pc.Partition()))
-	p := newPartitionConsumer(c.consumer, pc, c.options, c.msgCh, c.dlq, c.tally, c.logger)
-	c.partitions.Put(pc.Partition(), p)
+	c.logger.Info("new partition", zap.String("topic", pc.Topic()), zap.Int32("partition", pc.Partition()))
+
+	// TODO (gteo): Consider using a blocking dlq implementation or throwing fatal error
+	dlq, err := c.getDLQ(c.cluster, pc.Topic())
+	if err != nil {
+		c.logger.With(
+			zap.Error(err),
+			zap.String("topic", pc.Topic()),
+			zap.String("cluster", c.cluster),
+		).Error("failed to find dlq producer for this topic so using noop dlq producer may result in data loss")
+		dlq = NewDLQNoop()
+	}
+
+	p := newPartitionConsumer(c.consumer, pc, c.options, c.msgCh, dlq, c.tally, c.logger)
+	c.partitions.Put(topicPartition{pc.Topic(), pc.Partition()}, p)
 	p.Start()
+}
+
+func (c *clusterConsumer) getDLQ(cluster, topic string) (DLQ, error) {
+	consumerTopic, err := c.topics.GetConsumerTopicByClusterTopic(cluster, topic)
+	if err != nil {
+		return nil, err
+	}
+
+	dlq, ok := c.producers[consumerTopic.DLQ.HashKey()]
+	if !ok {
+		return nil, fmt.Errorf("no DLQ producer found")
+	}
+
+	return dlq, nil
 }
 
 // handleNotification is the handler that handles notifications
 // from the underlying library about partition rebalances. There
 // is no action taken in this handler except for logging.
-func (c *consumerImpl) handleNotification(n *cluster.Notification) {
-	var ok bool
-	var claimed, released, current []int32
-	if claimed, ok = n.Claimed[c.topic]; !ok {
-		claimed = []int32{}
+func (c *clusterConsumer) handleNotification(n *cluster.Notification) {
+	for topic, partitions := range n.Claimed {
+		for _, partition := range partitions {
+			c.logger.Debug("partition rebalance claimed", zap.String("topic", topic), zap.Int32("partition", partition))
+		}
 	}
-	if released, ok = n.Released[c.topic]; !ok {
-		released = []int32{}
+
+	for topic, partitions := range n.Released {
+		for _, partition := range partitions {
+			c.logger.Debug("partition rebalance released", zap.String("topic", topic), zap.Int32("partition", partition))
+		}
 	}
-	if current, ok = n.Current[c.topic]; !ok {
-		current = []int32{}
+
+	var current []string
+	for topic, partitions := range n.Current {
+		for _, partition := range partitions {
+			current = append(current, fmt.Sprintf("%s-%s", topic, strconv.Itoa(int(partition))))
+		}
 	}
-	c.logger.Info("cluster rebalance notification", zap.String("topic", c.topic),
-		zap.Int32s("claimed", claimed), zap.Int32s("released", released),
-		zap.Int32s("current", current))
+
+	c.logger.Info("owned topic-partitions", zap.Strings("topic-partitions", current))
 }
 
 // shutdown shutsdown the consumer
-func (c *consumerImpl) shutdown() {
+func (c *clusterConsumer) shutdown() {
 	var wg sync.WaitGroup
-	for _, pc := range c.partitions.partitions {
+	for _, pc := range c.partitions.topicPartitions {
 		wg.Add(1)
 		go func(p *partitionConsumer) {
 			p.Drain(2 * c.options.OffsetCommitInterval)
@@ -201,22 +249,23 @@ func (c *consumerImpl) shutdown() {
 	}
 	wg.Wait()
 	c.partitions.Clear()
-	c.consumer.CommitOffsets()
 	c.consumer.Close()
-	c.dlq.Close()
+	for _, p := range c.producers {
+		p.Close()
+	}
 	close(c.doneC)
 }
 
 // newPartitionMap returns a partitionMap, a wrapper around a map
-func newPartitionMap() partitionMap {
-	return partitionMap{
-		partitions: make(map[int32]*partitionConsumer, 8),
+func newPartitionMap() topicPartitionMap {
+	return topicPartitionMap{
+		topicPartitions: make(map[topicPartition]*partitionConsumer, 8),
 	}
 }
 
 // Get returns the partition with the given id, if it exists
-func (m *partitionMap) Get(key int32) *partitionConsumer {
-	p, ok := m.partitions[key]
+func (m *topicPartitionMap) Get(key topicPartition) *partitionConsumer {
+	p, ok := m.topicPartitions[key]
 	if !ok {
 		return nil
 	}
@@ -224,22 +273,22 @@ func (m *partitionMap) Get(key int32) *partitionConsumer {
 }
 
 // Delete deletes the partition with the given id
-func (m *partitionMap) Delete(key int32) {
-	delete(m.partitions, key)
+func (m *topicPartitionMap) Delete(key topicPartition) {
+	delete(m.topicPartitions, key)
 }
 
 // Put adds the partition with the given key
-func (m *partitionMap) Put(key int32, value *partitionConsumer) error {
+func (m *topicPartitionMap) Put(key topicPartition, value *partitionConsumer) error {
 	if m.Get(key) != nil {
 		return fmt.Errorf("partition already exist")
 	}
-	m.partitions[key] = value
+	m.topicPartitions[key] = value
 	return nil
 }
 
 // Clear clears all entries in the map
-func (m *partitionMap) Clear() {
-	for k := range m.partitions {
-		delete(m.partitions, k)
+func (m *topicPartitionMap) Clear() {
+	for k := range m.topicPartitions {
+		delete(m.topicPartitions, k)
 	}
 }

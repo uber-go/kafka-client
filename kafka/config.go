@@ -21,6 +21,7 @@
 package kafka
 
 import (
+	"fmt"
 	"github.com/Shopify/sarama"
 )
 
@@ -32,13 +33,29 @@ const (
 )
 
 type (
-	// DLQConfig contains the configuration for consumer Dead Letter Queue
-	DLQConfig struct {
-		// Name of the dlq topic. If empty, dlq will be disabled for this consumer
+	// Topic contains information for a topic.
+	// Our topics are uniquely defined by a Topic Name and Cluster pair.
+	Topic struct {
+		// Name for the topic
 		Name string
-		// Name of the cluster hosting this DLQ
+		// Cluster is the logical name of the cluster to find this topic on.
 		Cluster string
+		// BrokerList for the cluster to consume this topic from
+		// If this is empty, we will get the broker list using the NameResolver
+		BrokerList []string
 	}
+
+	// ConsumerTopic contains information for a consumer topic.
+	// Consumer topics has contains two Topics:
+	// the topic to consume from and the DLQ topic to send nacked messages to.
+	ConsumerTopic struct {
+		Topic
+		DLQ Topic
+	}
+
+	// ConsumerTopicList is a list of consumer topics
+	ConsumerTopicList []ConsumerTopic
+
 	// ConsumerConfig describes the config for a consumer group
 	ConsumerConfig struct {
 		// GroupName identifies your consumer group. Unless your application creates
@@ -46,11 +63,8 @@ type (
 		// prefix of the group name), this should match your application name.
 		GroupName string
 
-		// Topic is the name of topic to consume from.
-		Topic string
-
-		// Cluster is the name of the cluster hosting this topic
-		Cluster string
+		// TopicList is a list of consumer topics
+		TopicList ConsumerTopicList
 
 		// OffsetConfig is the offset-handling policy for this consumer group.
 		Offsets struct {
@@ -73,8 +87,30 @@ type (
 		// When using the handler based API, this corresponds to the number of concurrent go
 		// routines handler functions the library will run. Default is 1.
 		Concurrency int
-
-		// DLQ defines the configuration for Dead Letter Queue
-		DLQ DLQConfig
 	}
 )
+
+// TopicNames returns the list of topics to consume as a string array.
+func (c ConsumerTopicList) TopicNames() []string {
+	output := make([]string, 0, len(c))
+	for _, topic := range c {
+		output = append(output, topic.Name)
+	}
+	return output
+}
+
+// GetConsumerTopicByClusterTopic returns the ConsumerTopic for the cluster, topic pair.
+func (c ConsumerTopicList) GetConsumerTopicByClusterTopic(clusterName, topicName string) (ConsumerTopic, error) {
+	for _, topic := range c {
+		if topic.Cluster == clusterName && topic.Name == topicName {
+			return topic, nil
+		}
+	}
+	return ConsumerTopic{}, fmt.Errorf("unable to find TopicConfig with cluster %s and topic %s", clusterName, topicName)
+}
+
+// HashKey converts topic to a string for use as a map key
+func (c Topic) HashKey() string {
+	output := c.Name + c.Cluster
+	return output
+}

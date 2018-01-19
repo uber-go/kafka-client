@@ -21,12 +21,12 @@
 package kafkaclient
 
 import (
+	"fmt"
+	"os"
 	"time"
 
-	"os"
-
 	"github.com/Shopify/sarama"
-	cluster "github.com/bsm/sarama-cluster"
+	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -39,7 +39,10 @@ import (
 type Client struct {
 	tally    tally.Scope
 	logger   *zap.Logger
-	resolver kafka.ClusterNameResolver
+	resolver kafka.NameResolver
+
+	saramaSyncProducerConstructor func([]string) (sarama.SyncProducer, error)
+	saramaConsumerConstructor     func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)
 }
 
 var defaultOptions = consumer.Options{
@@ -54,56 +57,147 @@ var defaultOptions = consumer.Options{
 }
 
 // New returns a new kafka client
-func New(resolver kafka.ClusterNameResolver, logger *zap.Logger, scope tally.Scope) kafka.Client {
+func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kafka.Client {
 	return &Client{
 		resolver: resolver,
 		logger:   logger,
 		tally:    scope,
+		saramaSyncProducerConstructor: newSyncProducer,
+		saramaConsumerConstructor:     consumer.NewSaramaConsumer,
 	}
 }
 
 // NewConsumer returns a new instance of kafka consumer
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
-	brokers, err := c.resolver.Resolve(config.Topic)
-	if err != nil {
+	var err error
+	topicList := config.TopicList
+	if err = validateTopicListFromSingleCluster(topicList); err != nil {
 		return nil, err
 	}
+	clusterName := topicList[0].Cluster
+
 	opts := buildOptions(config)
 	saramaConfig := buildSaramaConfig(&opts)
-	saramaConsumer, err := cluster.NewConsumer(brokers, config.GroupName, []string{config.Topic}, saramaConfig)
+	msgCh := make(chan kafka.Message, opts.RcvBufferSize)
+
+	topicList, err = c.resolveBrokers(topicList)
 	if err != nil {
 		return nil, err
 	}
-	dlq, err := c.newDLQ(config)
+
+	saramaConsumer, err := c.buildSaramaConsumer(topicList, config.GroupName, saramaConfig)
 	if err != nil {
-		saramaConsumer.Close()
 		return nil, err
 	}
-	return consumer.New(config, saramaConsumer, &opts, dlq, c.tally, c.logger)
+	defer func() {
+		if err != nil {
+			saramaConsumer.Close()
+		}
+	}()
+
+	saramaProducerMap, err := c.buildSaramaProducerMap(topicList)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			for _, p := range saramaProducerMap {
+				p.Close()
+			}
+		}
+	}()
+
+	dlqMap, err := c.buildDLQMap(topicList, saramaProducerMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return consumer.NewClusterConsumer(
+		config.GroupName,
+		clusterName,
+		&opts,
+		topicList,
+		msgCh,
+		saramaConsumer,
+		dlqMap,
+		c.tally,
+		c.logger,
+	)
 }
 
-func (c *Client) newDLQ(config *kafka.ConsumerConfig) (consumer.DLQ, error) {
-	if config.DLQ.Name == "" {
-		return consumer.NewDLQNoop(), nil
-	}
-	brokers, err := c.resolver.Resolve(config.DLQ.Name)
-	if err != nil {
+func (c *Client) buildSaramaConsumer(topicList kafka.ConsumerTopicList, consumergroup string, cfg *cluster.Config) (consumer.SaramaConsumer, error) {
+	if err := validateTopicListFromSingleCluster(topicList); err != nil {
 		return nil, err
 	}
-	producer, err := c.newSyncProducer(brokers)
-	if err != nil {
-		return nil, err
+	brokerList := topicList[0].BrokerList
+	return c.saramaConsumerConstructor(brokerList, consumergroup, topicList.TopicNames(), cfg)
+}
+
+func (c *Client) buildSaramaProducerMap(topicList kafka.ConsumerTopicList) (map[string]sarama.SyncProducer, error) {
+	var err error
+	saramaProducerMap := make(map[string]sarama.SyncProducer)
+	for _, consumerTopic := range topicList {
+		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" && len(consumerTopic.DLQ.BrokerList) > 0 {
+			sp, ok := saramaProducerMap[consumerTopic.DLQ.Cluster]
+			if !ok {
+				sp, err = c.saramaSyncProducerConstructor(consumerTopic.DLQ.BrokerList)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create sarama producer for %s", consumerTopic.DLQ.Cluster)
+				}
+			}
+			saramaProducerMap[consumerTopic.DLQ.Cluster] = sp
+		}
 	}
-	return consumer.NewDLQ(config.DLQ.Name, producer, c.tally, c.logger), nil
+	return saramaProducerMap, nil
+}
+
+func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, saramaProducerMap map[string]sarama.SyncProducer) (map[string]consumer.DLQ, error) {
+	dlqMap := make(map[string]consumer.DLQ)
+	for _, topic := range topicList {
+		sp, ok := saramaProducerMap[topic.DLQ.Cluster]
+		if !ok {
+			return nil, fmt.Errorf("failed to find sarama producer for dlq producer")
+		}
+		dlq := consumer.NewDLQ(topic.DLQ.Name, topic.DLQ.Cluster, sp, c.tally, c.logger)
+		dlqMap[topic.DLQ.HashKey()] = dlq
+	}
+	return dlqMap, nil
+}
+
+// resolveBrokers will attempt to resolve BrokerList for each topic in the inputTopicList.
+// If the broker list cannot be resolved, the topic will be removed from the outputTopicList so that
+// the consumer will not consume that topic.
+func (c *Client) resolveBrokers(inputTopicList kafka.ConsumerTopicList) (kafka.ConsumerTopicList, error) {
+	outputTopicList := make([]kafka.ConsumerTopic, 0, len(inputTopicList))
+	for _, topic := range inputTopicList {
+		if len(topic.BrokerList) == 0 {
+			brokers, err := c.resolver.ResolveIPForCluster(topic.Cluster)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve broker IP: %s", err)
+			}
+			topic.BrokerList = brokers
+		}
+
+		if topic.DLQ.Name != "" && len(topic.DLQ.BrokerList) == 0 {
+			brokers, err := c.resolver.ResolveIPForCluster(topic.DLQ.Cluster)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve broker IP: %s", err)
+			}
+			topic.DLQ.BrokerList = brokers
+		}
+
+		outputTopicList = append(outputTopicList, topic)
+	}
+	return outputTopicList, nil
 }
 
 // newSyncProducer returns a new sarama sync producer from the cluster config
-func (c *Client) newSyncProducer(brokers []string) (sarama.SyncProducer, error) {
+func newSyncProducer(brokers []string) (sarama.SyncProducer, error) {
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 	config.Producer.Flush.Frequency = time.Millisecond * 500
-	return sarama.NewSyncProducer(brokers, config)
+	return consumer.NewSaramaProducer(brokers, config)
 }
 
 func buildOptions(config *kafka.ConsumerConfig) consumer.Options {
@@ -139,4 +233,17 @@ func clientID() string {
 		name = "unknown-kafka-client"
 	}
 	return name
+}
+
+func validateTopicListFromSingleCluster(c kafka.ConsumerTopicList) error {
+	if len(c) == 0 {
+		return fmt.Errorf("empty topic list")
+	}
+	cluster := c[0].Cluster
+	for _, topic := range c {
+		if topic.Cluster != cluster {
+			return fmt.Errorf("found two different clusters %s and %s in config", topic.Cluster, cluster)
+		}
+	}
+	return nil
 }

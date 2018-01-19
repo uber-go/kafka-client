@@ -54,15 +54,14 @@ const (
 	dlqRetryMaxInterval     = 10 * time.Second
 )
 
-// NewDLQ returns an instance of Dead Letter Queue that enqueues
-// given messages to a kafka topic
-func NewDLQ(topic string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
+// NewDLQ returns a DLQ writer for writing to a specific DLQ topic
+func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
 	return &dlqImpl{
 		topic:       topic,
 		producer:    producer,
 		retryPolicy: newDLQRetryPolicy(),
 		tally:       scope,
-		logger:      logger.With(zap.String("topic", topic)),
+		logger:      logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
 	}
 }
 
