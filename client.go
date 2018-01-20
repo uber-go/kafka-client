@@ -36,28 +36,19 @@ import (
 // Client refers to the kafka client. Serves as
 // the entry point to producing or consuming
 // messages from kafka
-type Client struct {
-	tally    tally.Scope
-	logger   *zap.Logger
-	resolver kafka.NameResolver
+type (
+	Client struct {
+		tally    tally.Scope
+		logger   *zap.Logger
+		resolver kafka.NameResolver
 
-	saramaSyncProducerConstructor func([]string) (sarama.SyncProducer, error)
-	saramaConsumerConstructor     func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)
-}
-
-var defaultOptions = consumer.Options{
-	Concurrency:            1024,
-	RcvBufferSize:          2 * 1024, // twice the concurrency for compute/io overlap
-	PartitionRcvBufferSize: 32,
-	OffsetCommitInterval:   time.Second,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      250 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
-	ConsumerMode:           cluster.ConsumerModePartitions,
-}
+		saramaSyncProducerConstructor func([]string) (sarama.SyncProducer, error)
+		saramaConsumerConstructor     func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)
+	}
+)
 
 // New returns a new kafka client
-func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kafka.Client {
+func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Client {
 	return &Client{
 		resolver: resolver,
 		logger:   logger,
@@ -68,7 +59,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) kaf
 }
 
 // NewConsumer returns a new instance of kafka consumer
-func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
+func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOption) (kafka.Consumer, error) {
 	var err error
 	topicList := config.TopicList
 	if err = validateTopicListFromSingleCluster(topicList); err != nil {
@@ -200,7 +191,7 @@ func newSyncProducer(brokers []string) (sarama.SyncProducer, error) {
 	return consumer.NewSaramaProducer(brokers, config)
 }
 
-func buildOptions(config *kafka.ConsumerConfig) consumer.Options {
+func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) consumer.Options {
 	opts := defaultOptions
 	if config.Concurrency > 0 {
 		opts.Concurrency = config.Concurrency
@@ -209,6 +200,10 @@ func buildOptions(config *kafka.ConsumerConfig) consumer.Options {
 	offsetPolicy := config.Offsets.Initial.Offset
 	if offsetPolicy == sarama.OffsetNewest || offsetPolicy == sarama.OffsetOldest {
 		opts.OffsetPolicy = config.Offsets.Initial.Offset
+	}
+
+	for _, option := range options {
+		option.apply(&opts)
 	}
 	return opts
 }

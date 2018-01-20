@@ -55,6 +55,13 @@ type (
 		RebalanceDwellTime     time.Duration
 		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
 		ConsumerMode           cluster.ConsumerMode
+		// PartitionLimiterSleepTime is amount of time a partition limiter sleeps if it has reached its consuming offset limit
+		// If this value is large, it may take longer for the consumer to shutdown once Stop() is called.
+		PartitionLimiterSleepTime time.Duration
+		// LimiterCheckInterval determines the regularity that the individual partition limits are checked.
+		LimiterCheckInterval time.Duration
+		// Limits are the consumer limits per topic partitions
+		Limits map[TopicPartition]int64
 	}
 
 	// saramaConsumer is an internal version of SaramaConsumer that implements a close method that can be safely called

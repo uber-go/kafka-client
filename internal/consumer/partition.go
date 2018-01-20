@@ -35,14 +35,34 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"sync"
 )
 
 type (
+	partitionLimiter interface {
+		updateCurrentOffset(int64)
+		reachedLimit() bool
+		sleep()
+	}
+
+	noopPartitionLimiter struct {
+		limitReached  bool
+		sleepDuration time.Duration
+	}
+
+	activePartitionLimiter struct {
+		sync.RWMutex
+		currentOffset int64
+		limitOffset   int64
+		sleepDuration time.Duration
+	}
+
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id        int32
-		topic     string
+		id    int32
+		topic string
+		partitionLimiter
 		msgCh     chan kafka.Message
 		ackMgr    *ackManager
 		sarama    SaramaConsumer
@@ -61,6 +81,7 @@ type (
 func newPartitionConsumer(
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
+	limiter partitionLimiter,
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
@@ -69,18 +90,19 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:        pConsumer.Partition(),
-		topic:     pConsumer.Topic(),
-		sarama:    sarama,
-		pConsumer: pConsumer,
-		options:   options,
-		msgCh:     msgCh,
-		dlq:       dlq,
-		tally:     scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:    logger,
-		stopC:     make(chan struct{}),
-		ackMgr:    newAckManager(maxUnAcked, scope, logger),
-		lifecycle: util.NewRunLifecycle(name, logger),
+		id:               pConsumer.Partition(),
+		topic:            pConsumer.Topic(),
+		sarama:           sarama,
+		pConsumer:        pConsumer,
+		partitionLimiter: limiter,
+		options:          options,
+		msgCh:            msgCh,
+		dlq:              dlq,
+		tally:            scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		logger:           logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		stopC:            make(chan struct{}),
+		ackMgr:           newAckManager(maxUnAcked, scope, logger),
+		lifecycle:        util.NewRunLifecycle(name, logger),
 	}
 }
 
@@ -110,24 +132,32 @@ func (p *partitionConsumer) Drain(d time.Duration) {
 }
 
 // messageLoop is the message read loop for this consumer
-// todo: maintain a pre-allocated pool of Messages
+// TODO (venkat): maintain a pre-allocated pool of Messages
 func (p *partitionConsumer) messageLoop() {
-	p.logInfo("partition consumer started")
+	p.logger.Info("partition consumer started")
 	for {
 		select {
 		case m, ok := <-p.pConsumer.Messages():
 			if !ok {
-				p.logInfo("partition message channel closed")
+				p.logger.Info("partition message channel closed")
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
+
+			if p.partitionLimiter.reachedLimit() {
+				// sleep if limit is reached to help other partitionConsumers consume faster
+				p.partitionLimiter.sleep()
+				continue
+			}
+			p.partitionLimiter.updateCurrentOffset(m.Offset)
+
 			lag := time.Now().Sub(m.Timestamp)
 			p.tally.Gauge(metrics.KafkaPartitionLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
 			p.tally.Counter(metrics.KafkaPartitionMessagesIn).Inc(1)
 			p.deliver(m)
 		case <-p.stopC:
-			p.logInfo("partition consumer stopped")
+			p.logger.Info("partition consumer stopped")
 			return
 		}
 	}
@@ -156,8 +186,7 @@ func (p *partitionConsumer) markOffset() {
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionBacklog).Update(backlog)
-		p.logger.Debug("kafka checkpoint",
-			zap.String("topic", p.topic), zap.Int32("partition", p.id), zap.Int64("offset", latestOff))
+		p.logger.Debug("kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
 
@@ -185,9 +214,7 @@ func (p *partitionConsumer) trackOffset(offset int64) (ackID, error) {
 				return ackID{}, err
 			}
 			p.tally.Counter(metrics.KafkaPartitionAckMgrListFull).Inc(1)
-			p.logger.Error("ackMgr list ran out of capacity",
-				zap.String("topic", p.topic),
-				zap.Int32("partition", p.id))
+			p.logger.Error("ackMgr list ran out of capacity")
 			// list can never be out of capacity if maxOutstanding
 			// is configured correctly for ackMgr, but if not, we have no
 			// option but to spin in this case
@@ -219,6 +246,50 @@ func (p *partitionConsumer) sleep(d time.Duration) bool {
 	}
 }
 
-func (p *partitionConsumer) logInfo(msg string) {
-	p.logger.Info(msg, zap.String("topic", p.topic), zap.Int32("partition", p.id))
+func (p *noopPartitionLimiter) updateCurrentOffset(offset int64) {}
+
+func (p *noopPartitionLimiter) reachedLimit() bool {
+	return p.limitReached
+}
+
+func (p *noopPartitionLimiter) sleep() {
+	time.Sleep(p.sleepDuration)
+}
+
+func newBlockingPartitionLimiter(sleep time.Duration) *noopPartitionLimiter {
+	return &noopPartitionLimiter{
+		limitReached:  true,
+		sleepDuration: sleep,
+	}
+}
+
+func newPassthroughPartitionLimiter(sleep time.Duration) *noopPartitionLimiter {
+	return &noopPartitionLimiter{
+		limitReached:  false,
+		sleepDuration: sleep,
+	}
+}
+
+func (p *activePartitionLimiter) updateCurrentOffset(offset int64) {
+	p.Lock()
+	defer p.Unlock()
+	p.currentOffset = offset
+}
+
+func (p *activePartitionLimiter) reachedLimit() bool {
+	p.RLock()
+	defer p.RUnlock()
+	return p.currentOffset >= p.limitOffset
+}
+
+func (p *activePartitionLimiter) sleep() {
+	time.Sleep(p.sleepDuration)
+}
+
+func newActivePartitionLimiter(sleep time.Duration, limit int64) *activePartitionLimiter {
+	return &activePartitionLimiter{
+		limitOffset:   limit,
+		currentOffset: -1,
+		sleepDuration: sleep,
+	}
 }

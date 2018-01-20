@@ -59,11 +59,6 @@ type (
 		Nack() error
 	}
 
-	// Client defines the contract for kafka client implementations
-	Client interface {
-		NewConsumer(config *ConsumerConfig) (Consumer, error)
-	}
-
 	// NameResolver is an interface that will be used by the consumer library to resolve
 	// (1) topic to cluster name and (2) cluster name to broker IP addresses.
 	// Implementations of KafkaNameResolver should be threadsafe.
