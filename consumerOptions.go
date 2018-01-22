@@ -1,33 +1,28 @@
 package kafkaclient
 
 import (
-	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
-	"time"
+	"github.com/uber-go/kafka-client/kafkacore"
 )
 
-// ConsumerOption is the type for optional arguments to the NewConsumer constructor.
 type (
+	// ConsumerOption is the type for optional arguments to the NewConsumer constructor.
 	ConsumerOption interface {
 		apply(*consumer.Options)
 	}
+
 	consumerLimitOption struct {
 		limits map[consumer.TopicPartition]int64
 	}
-)
 
-var defaultOptions = consumer.Options{
-	Concurrency:            1024,
-	RcvBufferSize:          2 * 1024, // twice the concurrency for compute/io overlap
-	PartitionRcvBufferSize: 32,
-	OffsetCommitInterval:   time.Second,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      250 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
-	ConsumerMode:           cluster.ConsumerModePartitions,
-	Limits:                 nil,
-}
+	inboundMessageTransformerOption struct {
+		transformer kafkacore.MessageTransformer
+	}
+
+	outboundMessageTransformerOption struct {
+		transformer kafkacore.MessageTransformer
+	}
+)
 
 // WithConsumerLimits sets consumer limits for a consumer.
 // If consumer limits are set, the consumer will only consume messages from the specified topic-partitions
@@ -47,5 +42,27 @@ func WithConsumerLimits(limits map[string]map[int32]int64) ConsumerOption {
 }
 
 func (c consumerLimitOption) apply(opts *consumer.Options) {
-	opts.Limits = c.limits
+	opts.Limits = consumer.NewTopicPartitionLimitMap(c.limits)
+}
+
+// WithInboundMessageTransformer sets a custom MessageTransformer for inbound messages
+func WithInboundMessageTransformer(msgFactory kafkacore.MessageTransformer) ConsumerOption {
+	return &inboundMessageTransformerOption{
+		transformer: msgFactory,
+	}
+}
+
+func (c inboundMessageTransformerOption) apply(options *consumer.Options) {
+	options.InboundMessageTransformer = c.transformer
+}
+
+// WithOutboundMessageTransformer sets a custom MessageTransformer for outbound messages
+func WithOutboundMessageTransformer(msgFactory kafkacore.MessageTransformer) ConsumerOption {
+	return &outboundMessageTransformerOption{
+		transformer: msgFactory,
+	}
+}
+
+func (c outboundMessageTransformerOption) apply(options *consumer.Options) {
+	options.OutboundMessageTransformer = c.transformer
 }

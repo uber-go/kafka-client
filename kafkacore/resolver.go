@@ -18,21 +18,37 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package kafka
+package kafkacore
 
 import (
 	"errors"
 	"sync"
 )
 
-// staticResolver is an implementation of NameResolver
-// that's backed by a static map of clusters to list of brokers
-// and a map of topics to cluster
-type staticResolver struct {
-	sync.RWMutex
-	topicsToCluster  map[string][]string
-	clusterToBrokers map[string][]string
-}
+type (
+	// NameResolver is an interface that will be used by the consumer library to resolve
+	// (1) topic to cluster name and (2) cluster name to broker IP addresses.
+	// Implementations of KafkaNameResolver should be threadsafe.
+	NameResolver interface {
+		// ResolveCluster returns a list of IP addresses for the brokers
+		ResolveIPForCluster(cluster string) ([]string, error)
+		// ResolveClusterForTopic returns the logical cluster names corresponding to a topic name
+		//
+		// It is possible for a topic to exist on multiple clusters in order to
+		// transparently handle topic migration between clusters.
+		// TODO (gteo): Remove to simplify API because not needed anymore
+		ResolveClusterForTopic(topic string) ([]string, error)
+	}
+
+	// staticResolver is an implementation of NameResolver
+	// that's backed by a static map of clusters to list of brokers
+	// and a map of topics to cluster
+	staticResolver struct {
+		sync.RWMutex
+		topicsToCluster  map[string][]string
+		clusterToBrokers map[string][]string
+	}
+)
 
 // errNoBrokersForCluster is returned when no brokers can be found for a cluster
 var errNoBrokersForCluster = errors.New("no brokers found for cluster")

@@ -18,30 +18,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package kafka
+package kafkacore
 
 import (
 	"time"
 )
 
 type (
-	// Consumer is the interface for a kafka consumer
-	Consumer interface {
-		// Name returns the name of this consumer group.
-		Name() string
-		// Topics returns the names of the topics being consumed.
-		Topics() []string
-		// Start starts the consumer
-		Start() error
-		// Stop stops the consumer
-		Stop()
-		// Closed returns a channel which will be closed after this consumer is completely shutdown
-		Closed() <-chan struct{}
-		// Messages return the message channel for this consumer
-		Messages() <-chan Message
+	// MessageTransformer is an interface that the library will use to transform a message.
+	// You can use this to change the default implementation of message accessors methods.
+	MessageTransformer interface {
+		Transform(msg Message) Message
 	}
 
-	// Message is the interface for a Kafka message
+	// Message is the interface that exposes the Message contents useful for the end user.
 	Message interface {
 		// Key is a mutable reference to the message's key.
 		Key() []byte
@@ -55,9 +45,17 @@ type (
 		Offset() int64
 		// Timestamp returns the timestamp for this message
 		Timestamp() time.Time
-		// Ack marks the message as successfully processed.
-		Ack() error
-		// Nack marks the message processing as failed and the message will be retried or sent to DLQ.
-		Nack() error
 	}
+
+	noopMessageTransformer struct{}
 )
+
+// NewNoopMessageTransformer returns a new MessageTransformer that does not transform the message at all.
+func NewNoopMessageTransformer() MessageTransformer {
+	return noopMessageTransformer{}
+}
+
+// Transform simply pass the incoming message through unchanged.
+func (m noopMessageTransformer) Transform(msg Message) Message {
+	return msg
+}

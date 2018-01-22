@@ -29,27 +29,32 @@ import (
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
+	"github.com/uber-go/kafka-client/kafkacore"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
-// Client refers to the kafka client. Serves as
-// the entry point to producing or consuming
-// messages from kafka
 type (
-	Client struct {
+	// Client refers to the kafka client. Serves as
+	// the entry point to producing or consuming
+	// messages from kafka
+	Client interface {
+		NewConsumer(*kafka.ConsumerConfig, ...ConsumerOption) (kafka.Consumer, error)
+	}
+
+	client struct {
 		tally    tally.Scope
 		logger   *zap.Logger
-		resolver kafka.NameResolver
+		resolver kafkacore.NameResolver
 
 		saramaSyncProducerConstructor func([]string) (sarama.SyncProducer, error)
 		saramaConsumerConstructor     func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)
 	}
 )
 
-// New returns a new kafka client
-func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Client {
-	return &Client{
+// NewClient returns a new kafka client
+func NewClient(resolver kafkacore.NameResolver, logger *zap.Logger, scope tally.Scope) Client {
+	return &client{
 		resolver: resolver,
 		logger:   logger,
 		tally:    scope,
@@ -59,7 +64,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 }
 
 // NewConsumer returns a new instance of kafka consumer
-func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOption) (kafka.Consumer, error) {
+func (c *client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOption) (kafka.Consumer, error) {
 	var err error
 	topicList := config.TopicList
 	if err = validateTopicListFromSingleCluster(topicList); err != nil {
@@ -68,7 +73,7 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOp
 	clusterName := topicList[0].Cluster
 
 	opts := buildOptions(config)
-	saramaConfig := buildSaramaConfig(&opts)
+	saramaConfig := buildSaramaConfig(opts)
 	msgCh := make(chan kafka.Message, opts.RcvBufferSize)
 
 	topicList, err = c.resolveBrokers(topicList)
@@ -98,7 +103,7 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOp
 		}
 	}()
 
-	dlqMap, err := c.buildDLQMap(topicList, saramaProducerMap)
+	dlqMap, err := c.buildDLQMap(topicList, saramaProducerMap, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +111,7 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOp
 	return consumer.NewClusterConsumer(
 		config.GroupName,
 		clusterName,
-		&opts,
+		opts,
 		topicList,
 		msgCh,
 		saramaConsumer,
@@ -116,7 +121,7 @@ func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOp
 	)
 }
 
-func (c *Client) buildSaramaConsumer(topicList kafka.ConsumerTopicList, consumergroup string, cfg *cluster.Config) (consumer.SaramaConsumer, error) {
+func (c *client) buildSaramaConsumer(topicList kafka.ConsumerTopicList, consumergroup string, cfg *cluster.Config) (consumer.SaramaConsumer, error) {
 	if err := validateTopicListFromSingleCluster(topicList); err != nil {
 		return nil, err
 	}
@@ -124,7 +129,7 @@ func (c *Client) buildSaramaConsumer(topicList kafka.ConsumerTopicList, consumer
 	return c.saramaConsumerConstructor(brokerList, consumergroup, topicList.TopicNames(), cfg)
 }
 
-func (c *Client) buildSaramaProducerMap(topicList kafka.ConsumerTopicList) (map[string]sarama.SyncProducer, error) {
+func (c *client) buildSaramaProducerMap(topicList kafka.ConsumerTopicList) (map[string]sarama.SyncProducer, error) {
 	var err error
 	saramaProducerMap := make(map[string]sarama.SyncProducer)
 	for _, consumerTopic := range topicList {
@@ -142,14 +147,14 @@ func (c *Client) buildSaramaProducerMap(topicList kafka.ConsumerTopicList) (map[
 	return saramaProducerMap, nil
 }
 
-func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, saramaProducerMap map[string]sarama.SyncProducer) (map[string]consumer.DLQ, error) {
+func (c *client) buildDLQMap(topicList kafka.ConsumerTopicList, saramaProducerMap map[string]sarama.SyncProducer, opts *consumer.Options) (map[string]consumer.DLQ, error) {
 	dlqMap := make(map[string]consumer.DLQ)
 	for _, topic := range topicList {
 		sp, ok := saramaProducerMap[topic.DLQ.Cluster]
 		if !ok {
 			return nil, fmt.Errorf("failed to find sarama producer for dlq producer")
 		}
-		dlq := consumer.NewDLQ(topic.DLQ.Name, topic.DLQ.Cluster, sp, c.tally, c.logger)
+		dlq := consumer.NewDLQ(topic.DLQ.Name, topic.DLQ.Cluster, sp, opts.OutboundMessageTransformer, c.tally, c.logger)
 		dlqMap[topic.DLQ.HashKey()] = dlq
 	}
 	return dlqMap, nil
@@ -158,7 +163,7 @@ func (c *Client) buildDLQMap(topicList kafka.ConsumerTopicList, saramaProducerMa
 // resolveBrokers will attempt to resolve BrokerList for each topic in the inputTopicList.
 // If the broker list cannot be resolved, the topic will be removed from the outputTopicList so that
 // the consumer will not consume that topic.
-func (c *Client) resolveBrokers(inputTopicList kafka.ConsumerTopicList) (kafka.ConsumerTopicList, error) {
+func (c *client) resolveBrokers(inputTopicList kafka.ConsumerTopicList) (kafka.ConsumerTopicList, error) {
 	outputTopicList := make([]kafka.ConsumerTopic, 0, len(inputTopicList))
 	for _, topic := range inputTopicList {
 		if len(topic.BrokerList) == 0 {
@@ -191,8 +196,8 @@ func newSyncProducer(brokers []string) (sarama.SyncProducer, error) {
 	return consumer.NewSaramaProducer(brokers, config)
 }
 
-func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) consumer.Options {
-	opts := defaultOptions
+func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) *consumer.Options {
+	opts := consumer.DefaultOptions()
 	if config.Concurrency > 0 {
 		opts.Concurrency = config.Concurrency
 		opts.RcvBufferSize = 2 * opts.Concurrency
@@ -203,7 +208,7 @@ func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) consu
 	}
 
 	for _, option := range options {
-		option.apply(&opts)
+		option.apply(opts)
 	}
 	return opts
 }

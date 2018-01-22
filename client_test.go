@@ -22,7 +22,6 @@ package kafkaclient
 
 import (
 	"testing"
-	"time"
 
 	"fmt"
 	"github.com/Shopify/sarama"
@@ -38,7 +37,7 @@ type (
 	ClientTestSuite struct {
 		suite.Suite
 		config                    *kafka.ConsumerConfig
-		client                    *Client
+		client                    *client
 		saramaConsumerConstructor *saramaConsumerConstructorMock
 		saramaProducerConstructor *saramaProducerConstructorMock
 		resolverMock              *resolverMock
@@ -54,10 +53,6 @@ type (
 	}
 
 	saramaProducerConstructorMock struct {
-		errRet map[string]error
-	}
-
-	clusterConsumerConstructorMock struct {
 		errRet map[string]error
 	}
 )
@@ -144,7 +139,7 @@ func (s *ClientTestSuite) SetupTest() {
 	s.saramaConsumerConstructor = &saramaConsumerConstructorMock{errRet: make(map[string]error)}
 	s.saramaProducerConstructor = &saramaProducerConstructorMock{errRet: make(map[string]error)}
 
-	s.client = &Client{
+	s.client = &client{
 		tally:                         tally.NoopScope,
 		logger:                        zap.NewNop(),
 		resolver:                      s.resolverMock,
@@ -154,15 +149,7 @@ func (s *ClientTestSuite) SetupTest() {
 }
 
 func (s *ClientTestSuite) TestBuildSaramaConfig() {
-	opts := &consumer.Options{
-		RcvBufferSize:          128,
-		PartitionRcvBufferSize: 64,
-		OffsetCommitInterval:   time.Minute,
-		RebalanceDwellTime:     time.Hour,
-		MaxProcessingTime:      time.Second,
-		OffsetPolicy:           sarama.OffsetNewest,
-		ConsumerMode:           cluster.ConsumerModePartitions,
-	}
+	opts := consumer.DefaultOptions()
 	config := buildSaramaConfig(opts)
 	s.Equal(opts.PartitionRcvBufferSize, config.ChannelBufferSize)
 	s.Equal(opts.OffsetPolicy, config.Consumer.Offsets.Initial)

@@ -33,6 +33,7 @@ import (
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
+	"github.com/uber-go/kafka-client/kafkacore"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -41,20 +42,21 @@ type (
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id           int32
-		topic        string
-		limit        int64
-		reachedLimit int32 // 0 = false, non-0 = true
-		msgCh        chan kafka.Message
-		ackMgr       *ackManager
-		sarama       SaramaConsumer
-		pConsumer    cluster.PartitionConsumer
-		dlq          DLQ
-		options      *Options
-		tally        tally.Scope
-		logger       *zap.Logger
-		stopC        chan struct{}
-		lifecycle    *util.RunLifecycle
+		id             int32
+		topic          string
+		limit          int64
+		reachedLimit   int32 // 0 = false, non-0 = true
+		msgCh          chan kafka.Message
+		ackMgr         *ackManager
+		sarama         SaramaConsumer
+		pConsumer      cluster.PartitionConsumer
+		dlq            DLQ
+		msgTransformer kafkacore.MessageTransformer
+		params         *Options
+		tally          tally.Scope
+		logger         *zap.Logger
+		stopC          chan struct{}
+		lifecycle      *util.RunLifecycle
 	}
 )
 
@@ -72,20 +74,21 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:           pConsumer.Partition(),
-		topic:        pConsumer.Topic(),
-		sarama:       sarama,
-		pConsumer:    pConsumer,
-		limit:        limit,
-		reachedLimit: 0,
-		options:      options,
-		msgCh:        msgCh,
-		dlq:          dlq,
-		tally:        scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:       logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
-		stopC:        make(chan struct{}),
-		ackMgr:       newAckManager(maxUnAcked, scope, logger),
-		lifecycle:    util.NewRunLifecycle(name, logger),
+		id:             pConsumer.Partition(),
+		topic:          pConsumer.Topic(),
+		sarama:         sarama,
+		pConsumer:      pConsumer,
+		limit:          limit,
+		reachedLimit:   0,
+		params:         options,
+		msgCh:          msgCh,
+		dlq:            dlq,
+		msgTransformer: options.InboundMessageTransformer,
+		tally:          scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		logger:         logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		stopC:          make(chan struct{}),
+		ackMgr:         newAckManager(maxUnAcked, scope, logger),
+		lifecycle:      util.NewRunLifecycle(name, logger),
 	}
 }
 
@@ -123,7 +126,7 @@ func (p *partitionConsumer) messageLoop() {
 		case m, ok := <-p.pConsumer.Messages():
 			if !ok {
 				p.logger.Info("partition message channel closed")
-				p.Drain(p.options.MaxProcessingTime)
+				p.Drain(p.params.MaxProcessingTime)
 				return
 			}
 
@@ -156,7 +159,7 @@ func (p *partitionConsumer) ReachedLimit() bool {
 
 // commitLoop periodically checkpoints the offsets with broker
 func (p *partitionConsumer) commitLoop() {
-	ticker := time.NewTicker(p.options.MaxProcessingTime)
+	ticker := time.NewTicker(p.params.MaxProcessingTime)
 	defer ticker.Stop()
 	for {
 		select {
@@ -183,11 +186,22 @@ func (p *partitionConsumer) markOffset() {
 
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
-	ackID, err := p.trackOffset(scm.Offset)
+	offset := scm.Offset
+	ackID, err := p.trackOffset(offset)
 	if err != nil {
 		return
 	}
-	msg := newMessage(scm, ackID, p.ackMgr, p.dlq)
+	msgCtx := msgContext{
+		ackID:  ackID,
+		ackMgr: p.ackMgr,
+		dlq:    p.dlq,
+	}
+
+	kafkacoreMessage := p.msgTransformer.Transform(&kafkacoreMessage{
+		msg: scm,
+	})
+
+	msg := newMessage(kafkacoreMessage, msgCtx)
 	select {
 	case p.msgCh <- msg:
 		return

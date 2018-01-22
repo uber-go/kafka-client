@@ -54,8 +54,8 @@ type (
 		consumer   SaramaConsumer
 		producers  map[string]DLQ // Map of DLQ topic -> DLQ
 		partitions topicPartitionMap
+		limits     TopicPartitionLimitMap
 		options    *Options
-		limits     topicPartitionLimitMap
 		tally      tally.Scope
 		logger     *zap.Logger
 		lifecycle  *util.RunLifecycle
@@ -84,7 +84,7 @@ func NewClusterConsumer(
 		msgCh,
 		consumer,
 		producers,
-		newTopicLimitMap(options.Limits),
+		options.Limits,
 		tally,
 		logger,
 	)
@@ -98,7 +98,7 @@ func newClusterConsumer(
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
 	producers map[string]DLQ,
-	limits topicPartitionLimitMap,
+	limits TopicPartitionLimitMap,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -106,12 +106,12 @@ func newClusterConsumer(
 		name:       groupName,
 		topics:     topics,
 		cluster:    cluster,
+		options:    options,
 		msgCh:      msgCh,
 		consumer:   consumer,
 		producers:  producers,
 		partitions: newPartitionMap(),
 		limits:     limits,
-		options:    options,
 		tally:      tally,
 		logger:     logger,
 		stopC:      make(chan struct{}),
