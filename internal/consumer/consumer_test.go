@@ -45,20 +45,18 @@ type (
 		dlqTopic       string
 		options        *Options
 		logger         *zap.Logger
-		limits         map[TopicPartition]int64
+		limits         topicPartitionLimitMap
 	}
 )
 
 var testConsumerOptions = Options{
-	Concurrency:               4,
-	RcvBufferSize:             4,
-	PartitionRcvBufferSize:    2,
-	OffsetCommitInterval:      25 * time.Millisecond,
-	RebalanceDwellTime:        time.Second,
-	MaxProcessingTime:         5 * time.Millisecond,
-	OffsetPolicy:              sarama.OffsetOldest,
-	LimiterCheckInterval:      400 * time.Millisecond,
-	PartitionLimiterSleepTime: time.Millisecond,
+	Concurrency:            4,
+	RcvBufferSize:          4,
+	PartitionRcvBufferSize: 2,
+	OffsetCommitInterval:   25 * time.Millisecond,
+	RebalanceDwellTime:     time.Second,
+	MaxProcessingTime:      5 * time.Millisecond,
+	OffsetPolicy:           sarama.OffsetOldest,
 }
 
 var _ kafka.Consumer = (*clusterConsumer)(nil)
@@ -88,6 +86,7 @@ func (s *ConsumerTestSuite) SetupTest() {
 		Concurrency: 4,
 	}
 	s.options = &testConsumerOptions
+	s.limits = newTopicLimitMap(nil)
 	s.logger = zap.NewNop()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
@@ -248,13 +247,10 @@ func (s *ConsumerTestSuite) TestDLQ() {
 func (s *ConsumerTestSuite) TestConsumerWithLimit() {
 	// partition 0 will receive 1 message
 	// partition 1 will receive 0 messages
-	limits := partitionLimitMap{
-		limits: map[TopicPartition]int64{
-			{Topic: s.topic, Partition: 0}: 1,
-		},
-		checkInterval: s.options.LimiterCheckInterval,
-		sleepInterval: s.options.PartitionLimiterSleepTime,
-	}
+	limits := newTopicLimitMap(map[TopicPartition]int64{
+		{Topic: s.topic, Partition: 0}: 1,
+	})
+	limits.checkInterval = time.Millisecond
 	s.consumer.limits = limits
 
 	s.NoError(s.consumer.Start())
@@ -273,19 +269,9 @@ func (s *ConsumerTestSuite) TestConsumerWithLimit() {
 	time.Sleep(100 * time.Millisecond)
 	s.Equal(0, len(s.consumer.msgCh))
 
-	// Partition 0 consumer should have committed one message
-	s.Equal(int64(1), s.saramaConsumer.offset(0))
-	cp := s.consumer.partitions.Get(TopicPartition{"unit-test", 0})
-	s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
-
-	// Partition 1 consumer should have committed no messages because it block on all messages
-	s.Equal(int64(0), s.saramaConsumer.offset(1))
-	cp = s.consumer.partitions.Get(TopicPartition{"unit-test", 1})
-	s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
-
 	// Consumer should auto close once limit has been reached
 	util.AwaitCondition(func() bool {
 		<-s.consumer.Closed()
 		return true
-	}, 500*time.Millisecond)
+	}, 100*time.Millisecond)
 }

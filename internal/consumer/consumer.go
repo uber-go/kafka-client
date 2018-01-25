@@ -45,12 +45,6 @@ type (
 		Partition int32
 	}
 
-	partitionLimitMap struct {
-		limits        map[TopicPartition]int64
-		checkInterval time.Duration
-		sleepInterval time.Duration
-	}
-
 	// clusterConsumer is an implementation of kafka consumer that consumes messages from a single cluster
 	clusterConsumer struct {
 		name       string
@@ -59,9 +53,9 @@ type (
 		msgCh      chan kafka.Message
 		consumer   SaramaConsumer
 		producers  map[string]DLQ // Map of DLQ topic -> DLQ
-		limits     partitionLimitMap
 		partitions topicPartitionMap
 		options    *Options
+		limits     topicPartitionLimitMap
 		tally      tally.Scope
 		logger     *zap.Logger
 		lifecycle  *util.RunLifecycle
@@ -90,7 +84,7 @@ func NewClusterConsumer(
 		msgCh,
 		consumer,
 		producers,
-		options.Limits,
+		newTopicLimitMap(options.Limits),
 		tally,
 		logger,
 	)
@@ -104,7 +98,7 @@ func newClusterConsumer(
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
 	producers map[string]DLQ,
-	limits map[TopicPartition]int64,
+	limits topicPartitionLimitMap,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -116,17 +110,13 @@ func newClusterConsumer(
 		consumer:   consumer,
 		producers:  producers,
 		partitions: newPartitionMap(),
-		limits: partitionLimitMap{
-			limits:        limits,
-			checkInterval: options.LimiterCheckInterval,
-			sleepInterval: options.PartitionLimiterSleepTime,
-		},
-		options:   options,
-		tally:     tally,
-		logger:    logger,
-		stopC:     make(chan struct{}),
-		doneC:     make(chan struct{}),
-		lifecycle: util.NewRunLifecycle(groupName+"-consumer-"+cluster, logger),
+		limits:     limits,
+		options:    options,
+		tally:      tally,
+		logger:     logger,
+		stopC:      make(chan struct{}),
+		doneC:      make(chan struct{}),
+		lifecycle:  util.NewRunLifecycle(groupName+"-consumer-"+cluster, logger),
 	}, nil
 }
 
@@ -170,11 +160,14 @@ func (c *clusterConsumer) Messages() <-chan kafka.Message {
 
 // eventLoop is the main event loop for this consumer
 func (c *clusterConsumer) eventLoop() {
-	limitCheckTicker := time.NewTicker(c.limits.checkInterval)
+	var limitCheckTicker <-chan time.Time
+	if c.limits.HasLimits() {
+		limitCheckTicker = time.NewTicker(c.limits.checkInterval).C
+	}
 	c.logger.Info("consumer started")
 	for {
 		select {
-		case <-limitCheckTicker.C:
+		case <-limitCheckTicker:
 			// limit checking occurs in the cluster consumer because we want to prevent partition rebalance for
 			// a partitionConsumer that has reached its limit.
 			reached, total := c.checkLimits()
@@ -202,7 +195,7 @@ func (c *clusterConsumer) eventLoop() {
 func (c *clusterConsumer) checkLimits() (reached int, total int) {
 	for _, pc := range c.partitions.topicPartitions {
 		total++
-		if pc.reachedLimit() {
+		if pc.ReachedLimit() {
 			reached++
 		}
 	}
@@ -334,25 +327,4 @@ func (m *topicPartitionMap) Clear() {
 	for k := range m.topicPartitions {
 		delete(m.topicPartitions, k)
 	}
-}
-
-// Get returns a partitionLimiter with a limit set if the topicPartition exists in the limits map.
-// If the limits map is not-empty but the key cannot be found, ti will return a partitionLimiter that always returns true
-// so no messages will be consumed.
-// If the limits map is nil, then it will return noopPartitionLimiter, which always allows all messages through.
-func (m partitionLimitMap) Get(key TopicPartition) partitionLimiter {
-	// If no limits, use passthrough partition limiter, which never blocks.
-	if m.limits == nil {
-		return newPassthroughPartitionLimiter(m.sleepInterval)
-	}
-
-	limit, ok := m.limits[key]
-	// If limits exist but no limit exists for this partition, use blocking partition limiter, which
-	// never allows any messages through.
-	if !ok {
-		return newBlockingPartitionLimiter(m.sleepInterval)
-	}
-
-	// If limits exist and there is a limit for this topic partition, use active partition limiter.
-	return newActivePartitionLimiter(m.sleepInterval, limit)
 }

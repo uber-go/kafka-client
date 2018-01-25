@@ -39,40 +39,24 @@ import (
 )
 
 type (
-	partitionLimiter interface {
-		updateCurrentOffset(int64)
-		reachedLimit() bool
-		sleep()
-	}
-
-	noopPartitionLimiter struct {
-		limitReached  bool
-		sleepDuration time.Duration
-	}
-
-	activePartitionLimiter struct {
-		sync.RWMutex
-		currentOffset int64
-		limitOffset   int64
-		sleepDuration time.Duration
-	}
-
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id    int32
-		topic string
-		partitionLimiter
-		msgCh     chan kafka.Message
-		ackMgr    *ackManager
-		sarama    SaramaConsumer
-		pConsumer cluster.PartitionConsumer
-		dlq       DLQ
-		options   *Options
-		tally     tally.Scope
-		logger    *zap.Logger
-		stopC     chan struct{}
-		lifecycle *util.RunLifecycle
+		id           int32
+		topic        string
+		limit        int64
+		reachedLimit bool
+		limitRWLock  sync.RWMutex
+		msgCh        chan kafka.Message
+		ackMgr       *ackManager
+		sarama       SaramaConsumer
+		pConsumer    cluster.PartitionConsumer
+		dlq          DLQ
+		options      *Options
+		tally        tally.Scope
+		logger       *zap.Logger
+		stopC        chan struct{}
+		lifecycle    *util.RunLifecycle
 	}
 )
 
@@ -81,7 +65,7 @@ type (
 func newPartitionConsumer(
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
-	limiter partitionLimiter,
+	limit int64,
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
@@ -90,19 +74,20 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:               pConsumer.Partition(),
-		topic:            pConsumer.Topic(),
-		sarama:           sarama,
-		pConsumer:        pConsumer,
-		partitionLimiter: limiter,
-		options:          options,
-		msgCh:            msgCh,
-		dlq:              dlq,
-		tally:            scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:           logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
-		stopC:            make(chan struct{}),
-		ackMgr:           newAckManager(maxUnAcked, scope, logger),
-		lifecycle:        util.NewRunLifecycle(name, logger),
+		id:           pConsumer.Partition(),
+		topic:        pConsumer.Topic(),
+		sarama:       sarama,
+		pConsumer:    pConsumer,
+		limit:        limit,
+		reachedLimit: false,
+		options:      options,
+		msgCh:        msgCh,
+		dlq:          dlq,
+		tally:        scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		logger:       logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		stopC:        make(chan struct{}),
+		ackMgr:       newAckManager(maxUnAcked, scope, logger),
+		lifecycle:    util.NewRunLifecycle(name, logger),
 	}
 }
 
@@ -144,12 +129,16 @@ func (p *partitionConsumer) messageLoop() {
 				return
 			}
 
-			if p.partitionLimiter.reachedLimit() {
-				// sleep if limit is reached to help other partitionConsumers consume faster
-				p.partitionLimiter.sleep()
-				continue
+			if p.limit != noLimit && m.Offset > p.limit {
+				p.logger.With(
+					zap.Int64("limit", p.limit),
+					zap.Int64("offset", m.Offset),
+				).Info("partition consumer stopped because it reached limit")
+				p.limitRWLock.Lock()
+				p.reachedLimit = true
+				p.limitRWLock.Unlock()
+				return
 			}
-			p.partitionLimiter.updateCurrentOffset(m.Offset)
 
 			lag := time.Now().Sub(m.Timestamp)
 			p.tally.Gauge(metrics.KafkaPartitionLag).Update(float64(lag))
@@ -161,6 +150,14 @@ func (p *partitionConsumer) messageLoop() {
 			return
 		}
 	}
+}
+
+// ReachedLimit returns true if the limit has been reached.
+// If no limit is specified, then it always returns false.
+func (p *partitionConsumer) ReachedLimit() bool {
+	p.limitRWLock.RLock()
+	defer p.limitRWLock.RUnlock()
+	return p.reachedLimit
 }
 
 // commitLoop periodically checkpoints the offsets with broker
@@ -243,53 +240,5 @@ func (p *partitionConsumer) sleep(d time.Duration) bool {
 		return false
 	case <-p.stopC:
 		return true
-	}
-}
-
-func (p *noopPartitionLimiter) updateCurrentOffset(offset int64) {}
-
-func (p *noopPartitionLimiter) reachedLimit() bool {
-	return p.limitReached
-}
-
-func (p *noopPartitionLimiter) sleep() {
-	time.Sleep(p.sleepDuration)
-}
-
-func newBlockingPartitionLimiter(sleep time.Duration) *noopPartitionLimiter {
-	return &noopPartitionLimiter{
-		limitReached:  true,
-		sleepDuration: sleep,
-	}
-}
-
-func newPassthroughPartitionLimiter(sleep time.Duration) *noopPartitionLimiter {
-	return &noopPartitionLimiter{
-		limitReached:  false,
-		sleepDuration: sleep,
-	}
-}
-
-func (p *activePartitionLimiter) updateCurrentOffset(offset int64) {
-	p.Lock()
-	defer p.Unlock()
-	p.currentOffset = offset
-}
-
-func (p *activePartitionLimiter) reachedLimit() bool {
-	p.RLock()
-	defer p.RUnlock()
-	return p.currentOffset >= p.limitOffset
-}
-
-func (p *activePartitionLimiter) sleep() {
-	time.Sleep(p.sleepDuration)
-}
-
-func newActivePartitionLimiter(sleep time.Duration, limit int64) *activePartitionLimiter {
-	return &activePartitionLimiter{
-		limitOffset:   limit,
-		currentOffset: -1,
-		sleepDuration: sleep,
 	}
 }
