@@ -4,10 +4,8 @@ A high level Go client library for Apache Kafka that provides the following prim
 
 * Competing consumer semantics with dead letter queue (DLQ)
   * Ability to process messages across multiple goroutines
-  * Ability to Ack or Nack message out of order (with optional retries / DLQs)
-* Cluster Awareness
-  * Dynamic discovery of topic to kafka cluster mapping
-  * Ability to consume from topics across different kafka clusters
+  * Ability to Ack or Nack messages out of order (with optional DLQ)
+* Ability to consume from topics spread across different kafka clusters
 
 ## Stability
 
