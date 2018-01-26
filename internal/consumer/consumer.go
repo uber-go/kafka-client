@@ -31,16 +31,18 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"time"
 )
 
 type (
 	topicPartitionMap struct {
-		topicPartitions map[topicPartition]*partitionConsumer
+		topicPartitions map[TopicPartition]*partitionConsumer
 	}
 
-	topicPartition struct {
-		topic     string
-		partition int32
+	// TopicPartition is a container for a (topic, partition) pair.
+	TopicPartition struct {
+		Topic     string
+		Partition int32
 	}
 
 	// clusterConsumer is an implementation of kafka consumer that consumes messages from a single cluster
@@ -53,6 +55,7 @@ type (
 		producers  map[string]DLQ // Map of DLQ topic -> DLQ
 		partitions topicPartitionMap
 		options    *Options
+		limits     topicPartitionLimitMap
 		tally      tally.Scope
 		logger     *zap.Logger
 		lifecycle  *util.RunLifecycle
@@ -81,6 +84,7 @@ func NewClusterConsumer(
 		msgCh,
 		consumer,
 		producers,
+		newTopicLimitMap(options.Limits),
 		tally,
 		logger,
 	)
@@ -94,6 +98,7 @@ func newClusterConsumer(
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
 	producers map[string]DLQ,
+	limits topicPartitionLimitMap,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -105,6 +110,7 @@ func newClusterConsumer(
 		consumer:   consumer,
 		producers:  producers,
 		partitions: newPartitionMap(),
+		limits:     limits,
 		options:    options,
 		tally:      tally,
 		logger:     logger,
@@ -154,9 +160,24 @@ func (c *clusterConsumer) Messages() <-chan kafka.Message {
 
 // eventLoop is the main event loop for this consumer
 func (c *clusterConsumer) eventLoop() {
+	var limitCheckTicker <-chan time.Time
+	if c.limits.HasLimits() {
+		limitCheckTicker = time.NewTicker(c.limits.checkInterval).C
+	}
 	c.logger.Info("consumer started")
 	for {
 		select {
+		case <-limitCheckTicker:
+			// limit checking occurs in the cluster consumer because we want to prevent partition rebalance for
+			// a partitionConsumer that has reached its limit.
+			reached, total := c.checkLimits()
+			c.logger.With(
+				zap.Int("reachedLimit", reached),
+				zap.Int("total", total),
+			).Debug("partition limits")
+			if reached >= total {
+				c.Stop()
+			}
 		case pc := <-c.consumer.Partitions():
 			c.addPartition(pc)
 		case n := <-c.consumer.Notifications():
@@ -171,29 +192,44 @@ func (c *clusterConsumer) eventLoop() {
 	}
 }
 
+func (c *clusterConsumer) checkLimits() (reached int, total int) {
+	for _, pc := range c.partitions.topicPartitions {
+		total++
+		if pc.ReachedLimit() {
+			reached++
+		}
+	}
+	return
+}
+
 // addPartition adds a new partition. If the partition already exist,
 // it is first stopped before overwriting it with the new partition
 func (c *clusterConsumer) addPartition(pc cluster.PartitionConsumer) {
-	old := c.partitions.Get(topicPartition{pc.Topic(), pc.Partition()})
+	topic := pc.Topic()
+	partition := pc.Partition()
+	topicPartition := TopicPartition{Topic: topic, Partition: partition}
+
+	old := c.partitions.Get(topicPartition)
 	if old != nil {
 		old.Stop()
-		c.partitions.Delete(topicPartition{pc.Topic(), pc.Partition()})
+		c.partitions.Delete(topicPartition)
 	}
-	c.logger.Info("new partition", zap.String("topic", pc.Topic()), zap.Int32("partition", pc.Partition()))
+	c.logger.Info("new partition", zap.String("topic", topic), zap.Int32("partition", partition))
 
 	// TODO (gteo): Consider using a blocking dlq implementation or throwing fatal error
-	dlq, err := c.getDLQ(c.cluster, pc.Topic())
+	dlq, err := c.getDLQ(c.cluster, topic)
 	if err != nil {
 		c.logger.With(
 			zap.Error(err),
-			zap.String("topic", pc.Topic()),
+			zap.String("topic", topic),
 			zap.String("cluster", c.cluster),
 		).Error("failed to find dlq producer for this topic so using noop dlq producer may result in data loss")
 		dlq = NewDLQNoop()
 	}
 
-	p := newPartitionConsumer(c.consumer, pc, c.options, c.msgCh, dlq, c.tally, c.logger)
-	c.partitions.Put(topicPartition{pc.Topic(), pc.Partition()}, p)
+	pl := c.limits.Get(topicPartition)
+	p := newPartitionConsumer(c.consumer, pc, pl, c.options, c.msgCh, dlq, c.tally, c.logger)
+	c.partitions.Put(topicPartition, p)
 	p.Start()
 }
 
@@ -259,12 +295,12 @@ func (c *clusterConsumer) shutdown() {
 // newPartitionMap returns a partitionMap, a wrapper around a map
 func newPartitionMap() topicPartitionMap {
 	return topicPartitionMap{
-		topicPartitions: make(map[topicPartition]*partitionConsumer, 8),
+		topicPartitions: make(map[TopicPartition]*partitionConsumer, 8),
 	}
 }
 
 // Get returns the partition with the given id, if it exists
-func (m *topicPartitionMap) Get(key topicPartition) *partitionConsumer {
+func (m *topicPartitionMap) Get(key TopicPartition) *partitionConsumer {
 	p, ok := m.topicPartitions[key]
 	if !ok {
 		return nil
@@ -273,12 +309,12 @@ func (m *topicPartitionMap) Get(key topicPartition) *partitionConsumer {
 }
 
 // Delete deletes the partition with the given id
-func (m *topicPartitionMap) Delete(key topicPartition) {
+func (m *topicPartitionMap) Delete(key TopicPartition) {
 	delete(m.topicPartitions, key)
 }
 
 // Put adds the partition with the given key
-func (m *topicPartitionMap) Put(key topicPartition, value *partitionConsumer) error {
+func (m *topicPartitionMap) Put(key TopicPartition, value *partitionConsumer) error {
 	if m.Get(key) != nil {
 		return fmt.Errorf("partition already exist")
 	}

@@ -55,6 +55,8 @@ type (
 		RebalanceDwellTime     time.Duration
 		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
 		ConsumerMode           cluster.ConsumerMode
+		// Limits are the consumer limits per topic partitions
+		Limits map[TopicPartition]int64
 	}
 
 	// saramaConsumer is an internal version of SaramaConsumer that implements a close method that can be safely called
