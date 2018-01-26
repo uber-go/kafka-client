@@ -26,11 +26,6 @@ func (m *topicPartitionLimitMap) HasLimits() bool {
 	return m.limits != nil
 }
 
-// SetLimits sets limits for this topic partition limit map.
-func (m *topicPartitionLimitMap) SetLimits(limits map[TopicPartition]int64) {
-	m.limits = limits
-}
-
 // Get returns noLimit if there are no limits set.
 // If there are limits set but no limits for this topic partition, then defaultLimit will be used.
 // Else, it will return the limit stored in the limits map.

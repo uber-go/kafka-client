@@ -22,10 +22,10 @@ package consumer
 
 import (
 	"fmt"
-	"time"
-
 	"math"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
@@ -35,7 +35,6 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"sync"
 )
 
 type (
@@ -45,8 +44,7 @@ type (
 		id           int32
 		topic        string
 		limit        int64
-		reachedLimit bool
-		limitRWLock  sync.RWMutex
+		reachedLimit int32 // 0 = false, non-0 = true
 		msgCh        chan kafka.Message
 		ackMgr       *ackManager
 		sarama       SaramaConsumer
@@ -79,7 +77,7 @@ func newPartitionConsumer(
 		sarama:       sarama,
 		pConsumer:    pConsumer,
 		limit:        limit,
-		reachedLimit: false,
+		reachedLimit: 0,
 		options:      options,
 		msgCh:        msgCh,
 		dlq:          dlq,
@@ -134,9 +132,7 @@ func (p *partitionConsumer) messageLoop() {
 					zap.Int64("limit", p.limit),
 					zap.Int64("offset", m.Offset),
 				).Info("partition consumer stopped because it reached limit")
-				p.limitRWLock.Lock()
-				p.reachedLimit = true
-				p.limitRWLock.Unlock()
+				atomic.CompareAndSwapInt32(&p.reachedLimit, 0, 1)
 				return
 			}
 
@@ -155,9 +151,7 @@ func (p *partitionConsumer) messageLoop() {
 // ReachedLimit returns true if the limit has been reached.
 // If no limit is specified, then it always returns false.
 func (p *partitionConsumer) ReachedLimit() bool {
-	p.limitRWLock.RLock()
-	defer p.limitRWLock.RUnlock()
-	return p.reachedLimit
+	return atomic.LoadInt32(&p.reachedLimit) != 0
 }
 
 // commitLoop periodically checkpoints the offsets with broker
