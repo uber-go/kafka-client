@@ -55,6 +55,9 @@ type (
 		Offset() int64
 		// Timestamp returns the timestamp for this message
 		Timestamp() time.Time
+		// RetryCount returns the number of times this message has been redelivered.
+		// This is an int64 that gets incremented on each redelivery.
+		RetryCount() int64
 		// Ack marks the message as successfully processed.
 		Ack() error
 		// Nack marks the message processing as failed and the message will be retried or sent to DLQ.

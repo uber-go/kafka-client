@@ -22,6 +22,7 @@ package consumer
 
 import (
 	"github.com/Shopify/sarama"
+	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/kafka-client/kafkacore"
 	"time"
 )
@@ -38,6 +39,12 @@ type (
 		msg *sarama.ConsumerMessage
 	}
 
+	// retryMessage is an implementation of kafka.Message with RetryCount overwitten.
+	retryMessage struct {
+		kafka.Message
+		retryCount int64
+	}
+
 	// context that gets piggybacked in the message
 	// will be used when the message is Acked/Nackd
 	msgContext struct {
@@ -47,6 +54,13 @@ type (
 		dlq    DLQ
 	}
 )
+
+func newRetryMessage(msg kafka.Message, retryCount int64) *retryMessage {
+	return &retryMessage{
+		Message:    msg,
+		retryCount: retryCount,
+	}
+}
 
 func newMessage(msg kafkacore.Message, ctx msgContext) *Message {
 	return &Message{
@@ -89,6 +103,11 @@ func (m *kafkacoreMessage) Timestamp() time.Time {
 	return m.msg.Timestamp
 }
 
+// RetryCount returns 0 by default.
+func (m *kafkacoreMessage) RetryCount() int64 {
+	return 0
+}
+
 // Ack acknowledges the message
 func (m *Message) Ack() error {
 	ctx := &m.ctx
@@ -105,4 +124,8 @@ func (m *Message) Nack() error {
 	ctx.dlq.Add(m)
 	ctx.ackMgr.Nack(ctx.ackID)
 	return nil
+}
+
+func (m *retryMessage) RetryCount() int64 {
+	return m.retryCount
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/uber-go/kafka-client/internal/backoff"
+	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/kafka-client/kafkacore"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -37,9 +38,22 @@ type (
 	DLQ interface {
 		Close()
 		// Add adds the given message to DLQ
-		Add(m kafkacore.Message) error
+		Add(m kafka.Message) error
 	}
-	dlqImpl struct {
+
+	dlqWithRetry struct {
+		retryCount int64
+		retry      DLQ
+		dlq        DLQ
+		tally      tally.Scope
+		logger     *zap.Logger
+	}
+
+	retryImpl struct {
+		msgCh chan kafka.Message
+	}
+
+	errorTopic struct {
 		topic          string
 		producer       sarama.SyncProducer
 		retryPolicy    backoff.RetryPolicy
@@ -47,6 +61,7 @@ type (
 		tally          tally.Scope
 		logger         *zap.Logger
 	}
+
 	dlqNoop struct{}
 )
 
@@ -55,9 +70,22 @@ const (
 	dlqRetryMaxInterval     = 10 * time.Second
 )
 
+// NewDLQWithRetry returns a DLQ writer with in-memory retry.
+// Messages that are added to the DLQ will be redelivered on the message channel up to retryCount
+// number of times.
+func NewDLQWithRetry(retry, dlq DLQ, retryCount int64, scope tally.Scope, logger *zap.Logger) DLQ {
+	return &dlqWithRetry{
+		retryCount: retryCount,
+		retry:      retry,
+		dlq:        dlq,
+		tally:      scope,
+		logger:     logger,
+	}
+}
+
 // NewDLQ returns a DLQ writer for writing to a specific DLQ topic
 func NewDLQ(topic, cluster string, producer sarama.SyncProducer, msgTransformer kafkacore.MessageTransformer, scope tally.Scope, logger *zap.Logger) DLQ {
-	return &dlqImpl{
+	return &errorTopic{
 		topic:          topic,
 		producer:       producer,
 		retryPolicy:    newDLQRetryPolicy(),
@@ -67,18 +95,47 @@ func NewDLQ(topic, cluster string, producer sarama.SyncProducer, msgTransformer 
 	}
 }
 
+// NewRetry is an implementation of a DLQ writer in which adding a message to the DLQ simply
+// results in the message being redelivered on the Message channel with incremented retry count.
+func NewRetry(msgCh chan kafka.Message) DLQ {
+	return &retryImpl{
+		msgCh: msgCh,
+	}
+}
+
+func (h *dlqWithRetry) Close() {
+	h.retry.Close()
+	h.dlq.Close()
+}
+
+func (h *dlqWithRetry) Add(m kafka.Message) error {
+	retryCount := m.RetryCount() + 1
+	if retryCount > h.retryCount {
+		return h.dlq.Add(m)
+	}
+	return h.retry.Add(m)
+}
+
+func (r *retryImpl) Close() {}
+
+func (r *retryImpl) Add(m kafka.Message) error {
+	outM := newRetryMessage(m, m.RetryCount()+1)
+	r.msgCh <- outM
+	return nil
+}
+
 // Add blocks until successfully enqueuing the given
 // message into the error queue
-func (d *dlqImpl) Add(m kafkacore.Message) error {
+func (d *errorTopic) Add(m kafka.Message) error {
 	sm := d.newSaramaMessage(m)
 	return backoff.Retry(func() error { return d.add(sm) }, d.retryPolicy, d.isRetryable)
 }
 
-func (d *dlqImpl) Close() {
+func (d *errorTopic) Close() {
 	d.producer.Close()
 }
 
-func (d *dlqImpl) add(m *sarama.ProducerMessage) error {
+func (d *errorTopic) add(m *sarama.ProducerMessage) error {
 	_, _, err := d.producer.SendMessage(m)
 	if err != nil {
 		d.logger.Error("error sending message to DLQ", zap.Error(err))
@@ -86,7 +143,7 @@ func (d *dlqImpl) add(m *sarama.ProducerMessage) error {
 	return err
 }
 
-func (d *dlqImpl) isRetryable(err error) bool {
+func (d *errorTopic) isRetryable(err error) bool {
 	return true
 }
 
@@ -97,7 +154,7 @@ func newDLQRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func (d *dlqImpl) newSaramaMessage(m kafkacore.Message) *sarama.ProducerMessage {
+func (d *errorTopic) newSaramaMessage(m kafkacore.Message) *sarama.ProducerMessage {
 	outM := d.msgTransformer.Transform(m)
 	return &sarama.ProducerMessage{
 		Topic: d.topic,
@@ -111,5 +168,5 @@ func (d *dlqImpl) newSaramaMessage(m kafkacore.Message) *sarama.ProducerMessage 
 func NewDLQNoop() DLQ {
 	return &dlqNoop{}
 }
-func (d *dlqNoop) Add(m kafkacore.Message) error { return nil }
-func (d *dlqNoop) Close()                        {}
+func (d *dlqNoop) Add(m kafka.Message) error { return nil }
+func (d *dlqNoop) Close()                    {}
