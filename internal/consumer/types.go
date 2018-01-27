@@ -21,8 +21,6 @@
 package consumer
 
 import (
-	"time"
-
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
@@ -45,20 +43,6 @@ type (
 
 	// Options contains the tunables for a
 	// kafka consumer. Currently, these options are
-	// not configurable except for unit test
-	Options struct {
-		RcvBufferSize          int // aggregate message buffer size
-		PartitionRcvBufferSize int // message buffer size for each partition
-		Concurrency            int // number of goroutines that will concurrently process messages
-		OffsetPolicy           int64
-		OffsetCommitInterval   time.Duration
-		RebalanceDwellTime     time.Duration
-		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
-		ConsumerMode           cluster.ConsumerMode
-		// Limits are the consumer limits per topic partitions
-		Limits map[TopicPartition]int64
-	}
-
 	// saramaConsumer is an internal version of SaramaConsumer that implements a close method that can be safely called
 	// multiple times.
 	saramaConsumer struct {

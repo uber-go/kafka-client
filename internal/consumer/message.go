@@ -21,69 +21,71 @@
 package consumer
 
 import (
-	"time"
-
 	"github.com/Shopify/sarama"
+	"github.com/uber-go/kafka-client/kafkacore"
+	"time"
 )
 
 type (
 	// Message is a wrapper around kafka consumer message
 	Message struct {
-		msg *sarama.ConsumerMessage
+		kafkacore.Message
 		ctx msgContext // consumer metadata, invisible to the application
 	}
+
+	// kafkacoreMessage is an implementation of kafkacore.Message
+	kafkacoreMessage struct {
+		msg *sarama.ConsumerMessage
+	}
+
 	// context that gets piggybacked in the message
 	// will be used when the message is Acked/Nackd
 	msgContext struct {
+		offset int64
 		ackID  ackID
 		ackMgr *ackManager
 		dlq    DLQ
 	}
 )
 
-// newMessage builds a new Message object from the given kafka message
-func newMessage(scm *sarama.ConsumerMessage, ackID ackID, ackMgr *ackManager, dlq DLQ) *Message {
+func newMessage(msg kafkacore.Message, ctx msgContext) *Message {
 	return &Message{
-		msg: scm,
-		ctx: msgContext{
-			ackID:  ackID,
-			ackMgr: ackMgr,
-			dlq:    dlq,
-		},
+		Message: msg,
+		ctx:     ctx,
 	}
 }
 
 // Key is a mutable reference to the message's key
-func (m *Message) Key() []byte {
+func (m *kafkacoreMessage) Key() []byte {
 	result := make([]byte, len(m.msg.Key))
 	copy(result, m.msg.Key)
 	return result
 }
 
 // Value is a mutable reference to the message's value
-func (m *Message) Value() []byte {
+func (m *kafkacoreMessage) Value() []byte {
 	result := make([]byte, len(m.msg.Value))
 	copy(result, m.msg.Value)
 	return result
 }
 
 // Topic is the topic from which the message was read
-func (m *Message) Topic() string {
+func (m *kafkacoreMessage) Topic() string {
 	return m.msg.Topic
 }
 
 // Partition is the ID of the partition from which the message was read
-func (m *Message) Partition() int32 {
+func (m *kafkacoreMessage) Partition() int32 {
 	return m.msg.Partition
 }
 
 // Offset is the message's offset.
-func (m *Message) Offset() int64 {
+func (m *kafkacoreMessage) Offset() int64 {
 	return m.msg.Offset
 }
 
 // Timestamp returns the timestamp for this message
-func (m *Message) Timestamp() time.Time {
+func (m *kafkacoreMessage) Timestamp() time.Time {
 	return m.msg.Timestamp
 }
 

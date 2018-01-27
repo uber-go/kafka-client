@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
+	"github.com/uber-go/kafka-client/kafkacore"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -45,24 +46,28 @@ type (
 		dlqTopic       string
 		options        *Options
 		logger         *zap.Logger
-		limits         topicPartitionLimitMap
 	}
 )
-
-var testConsumerOptions = Options{
-	Concurrency:            4,
-	RcvBufferSize:          4,
-	PartitionRcvBufferSize: 2,
-	OffsetCommitInterval:   25 * time.Millisecond,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      5 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
-}
 
 var _ kafka.Consumer = (*clusterConsumer)(nil)
 
 func TestConsumerTestSuite(t *testing.T) {
 	suite.Run(t, new(ConsumerTestSuite))
+}
+
+func testConsumerOptions() *Options {
+	return &Options{
+		Concurrency:            4,
+		RcvBufferSize:          4,
+		PartitionRcvBufferSize: 2,
+		OffsetCommitInterval:   25 * time.Millisecond,
+		RebalanceDwellTime:     time.Second,
+		MaxProcessingTime:      5 * time.Millisecond,
+		OffsetPolicy:           sarama.OffsetOldest,
+		Limits:                 NewTopicPartitionLimitMap(nil),
+		InboundMessageTransformer:  kafkacore.NewNoopMessageTransformer(),
+		OutboundMessageTransformer: kafkacore.NewNoopMessageTransformer(),
+	}
 }
 
 func (s *ConsumerTestSuite) SetupTest() {
@@ -85,17 +90,16 @@ func (s *ConsumerTestSuite) SetupTest() {
 		GroupName:   "unit-test-cg",
 		Concurrency: 4,
 	}
-	s.options = &testConsumerOptions
-	s.limits = newTopicLimitMap(nil)
+	s.options = testConsumerOptions()
 	s.logger = zap.NewNop()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
 	msgCh := make(chan kafka.Message)
 	var err error
 	dlq := map[string]DLQ{
-		topic.DLQ.HashKey(): NewDLQ(s.dlqTopic, topic.DLQ.Cluster, s.dlqProducer, tally.NoopScope, s.logger),
+		topic.DLQ.HashKey(): NewDLQ(s.dlqTopic, topic.DLQ.Cluster, s.dlqProducer, s.options.OutboundMessageTransformer, tally.NoopScope, s.logger),
 	}
-	s.consumer, err = newClusterConsumer(config.GroupName, topic.Cluster, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, s.limits, tally.NoopScope, s.logger)
+	s.consumer, err = newClusterConsumer(config.GroupName, topic.Cluster, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, s.options.Limits, tally.NoopScope, s.logger)
 	s.NoError(err)
 }
 
@@ -247,7 +251,7 @@ func (s *ConsumerTestSuite) TestDLQ() {
 func (s *ConsumerTestSuite) TestConsumerWithLimit() {
 	// partition 0 will receive 1 message
 	// partition 1 will receive 0 messages
-	limits := newTopicLimitMap(map[TopicPartition]int64{
+	limits := NewTopicPartitionLimitMap(map[TopicPartition]int64{
 		{Topic: s.topic, Partition: 0}: 1,
 	})
 	limits.checkInterval = time.Millisecond

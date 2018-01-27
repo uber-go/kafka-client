@@ -25,7 +25,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/uber-go/kafka-client/internal/backoff"
-	"github.com/uber-go/kafka-client/kafka"
+	"github.com/uber-go/kafka-client/kafkacore"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -37,14 +37,15 @@ type (
 	DLQ interface {
 		Close()
 		// Add adds the given message to DLQ
-		Add(m kafka.Message) error
+		Add(m kafkacore.Message) error
 	}
 	dlqImpl struct {
-		topic       string
-		producer    sarama.SyncProducer
-		retryPolicy backoff.RetryPolicy
-		tally       tally.Scope
-		logger      *zap.Logger
+		topic          string
+		producer       sarama.SyncProducer
+		retryPolicy    backoff.RetryPolicy
+		msgTransformer kafkacore.MessageTransformer
+		tally          tally.Scope
+		logger         *zap.Logger
 	}
 	dlqNoop struct{}
 )
@@ -55,19 +56,20 @@ const (
 )
 
 // NewDLQ returns a DLQ writer for writing to a specific DLQ topic
-func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
+func NewDLQ(topic, cluster string, producer sarama.SyncProducer, msgTransformer kafkacore.MessageTransformer, scope tally.Scope, logger *zap.Logger) DLQ {
 	return &dlqImpl{
-		topic:       topic,
-		producer:    producer,
-		retryPolicy: newDLQRetryPolicy(),
-		tally:       scope,
-		logger:      logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
+		topic:          topic,
+		producer:       producer,
+		retryPolicy:    newDLQRetryPolicy(),
+		msgTransformer: msgTransformer,
+		tally:          scope,
+		logger:         logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
 	}
 }
 
 // Add blocks until successfully enqueuing the given
 // message into the error queue
-func (d *dlqImpl) Add(m kafka.Message) error {
+func (d *dlqImpl) Add(m kafkacore.Message) error {
 	sm := d.newSaramaMessage(m)
 	return backoff.Retry(func() error { return d.add(sm) }, d.retryPolicy, d.isRetryable)
 }
@@ -95,11 +97,12 @@ func newDLQRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func (d *dlqImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
+func (d *dlqImpl) newSaramaMessage(m kafkacore.Message) *sarama.ProducerMessage {
+	outM := d.msgTransformer.Transform(m)
 	return &sarama.ProducerMessage{
 		Topic: d.topic,
-		Key:   sarama.StringEncoder(m.Key()),
-		Value: sarama.StringEncoder(m.Value()),
+		Key:   sarama.StringEncoder(outM.Key()),
+		Value: sarama.StringEncoder(outM.Value()),
 	}
 }
 
@@ -108,5 +111,5 @@ func (d *dlqImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
 func NewDLQNoop() DLQ {
 	return &dlqNoop{}
 }
-func (d *dlqNoop) Add(m kafka.Message) error { return nil }
-func (d *dlqNoop) Close()                    {}
+func (d *dlqNoop) Add(m kafkacore.Message) error { return nil }
+func (d *dlqNoop) Close()                        {}
