@@ -43,7 +43,20 @@ type (
 		doneC     chan struct{}
 		lifecycle *util.RunLifecycle
 	}
-
+	mockMessage struct {
+		key       []byte
+		value     []byte
+		topic     string
+		partition int32
+		offset    int64
+		timestamp time.Time
+		ackErr    error
+		nackErr   error
+	}
+	mockSaramaProducer struct {
+		sync.Mutex
+		errs sarama.ProducerErrors
+	}
 	mockSaramaConsumer struct {
 		sync.Mutex
 		closed     int64
@@ -114,6 +127,56 @@ func (c *mockConsumer) Closed() <-chan struct{} {
 // Messages return the message channel.
 func (c *mockConsumer) Messages() <-chan kafka.Message {
 	return c.msgC
+}
+
+func (m *mockMessage) Key() []byte {
+	return m.key
+}
+
+func (m *mockMessage) Value() []byte {
+	return m.value
+}
+
+func (m *mockMessage) Topic() string {
+	return m.topic
+}
+
+func (m *mockMessage) Partition() int32 {
+	return m.partition
+}
+
+func (m *mockMessage) Offset() int64 {
+	return m.offset
+}
+
+func (m *mockMessage) Timestamp() time.Time {
+	return m.timestamp
+}
+
+func (m *mockMessage) Ack() error {
+	return m.ackErr
+}
+
+func (m *mockMessage) Nack() error {
+	return m.nackErr
+}
+
+func newMockSaramaProducer() *mockSaramaProducer {
+	return &mockSaramaProducer{
+		errs: make([]*sarama.ProducerError, 0, 10),
+	}
+}
+
+func (m *mockSaramaProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
+	return 0, 0, nil
+}
+
+func (m *mockSaramaProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
+	return m.errs
+}
+
+func (m *mockSaramaProducer) Close() error {
+	return nil
 }
 
 func newMockPartitionedConsumer(topic string, id int32, beginOffset int64, rcvBufSize int) *mockPartitionedConsumer {

@@ -232,6 +232,9 @@ func (c *clusterConsumer) Topics() []string {
 func (c *clusterConsumer) Start() error {
 	return c.lifecycle.Start(func() error {
 		go c.eventLoop()
+		for _, dlq := range c.producers {
+			dlq.Start()
+		}
 		c.tally.Counter(metrics.KafkaConsumerStarted).Inc(1)
 		return nil
 	})
@@ -385,7 +388,7 @@ func (c *clusterConsumer) shutdown() {
 	c.partitions.Clear()
 	c.consumer.Close()
 	for _, p := range c.producers {
-		p.Close()
+		p.Stop()
 	}
 	close(c.doneC)
 }
