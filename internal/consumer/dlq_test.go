@@ -38,7 +38,7 @@ func (s *DLQTestSuite) SetupTest() {
 		closedC:          make(chan struct{}),
 		messageBufferMap: newMessageBufferMap(),
 		errorMap:         newErrorMap(),
-		tally:            tally.NoopScope,
+		scope:            tally.NoopScope,
 		logger:           logger,
 		lifecycle:        util.NewRunLifecycle("dlqTest", logger),
 	}

@@ -21,6 +21,7 @@
 package consumer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -43,7 +44,8 @@ type (
 		Start() error
 		// Stop the DLQ producer and close resources it holds.
 		Stop()
-		// Add adds the given message to DLQ
+		// Add adds the given message to DLQ.
+		// This is a synchronous call and will block until sending is successful.
 		Add(m kafka.Message) error
 	}
 	dlqImpl struct {
@@ -67,7 +69,7 @@ type (
 		messageBufferMap *messageBufferMap
 		errorMap         *errorMap
 
-		tally     tally.Scope
+		scope     tally.Scope
 		logger    *zap.Logger
 		lifecycle *util.RunLifecycle
 	}
@@ -179,7 +181,7 @@ func newBufferedDLQImpl(topic string, producer sarama.SyncProducer, timeLimit <-
 		closedC:          make(chan struct{}),
 		messageBufferMap: newMessageBufferMap(),
 		errorMap:         newErrorMap(),
-		tally:            tally,
+		scope:            tally,
 		logger:           log,
 		lifecycle:        util.NewRunLifecycle(fmt.Sprintf("dlq-%s", topic), log),
 	}
@@ -236,7 +238,7 @@ func (d *bufferedDLQImpl) flush() {
 	// Some messages may fail, so parse failures into errorMap
 	producerErrs, ok := err.(sarama.ProducerErrors)
 	if !ok {
-		d.errorMap.PutAll(d.messageBufferMap.keys(), fmt.Errorf("failed to send message to DLQ"))
+		d.errorMap.PutAll(d.messageBufferMap.keys(), errors.New("failed to send message to DLQ"))
 		return
 	}
 
@@ -244,7 +246,7 @@ func (d *bufferedDLQImpl) flush() {
 		err := producerErr.Err
 		key, ok := producerErr.Msg.Metadata.(string)
 		if !ok {
-			d.errorMap.Put(key, fmt.Errorf("failed to send message to DLQ"))
+			d.errorMap.Put(key, errors.New("failed to send message to DLQ"))
 			continue
 		}
 		d.errorMap.Put(key, err)
@@ -259,7 +261,7 @@ func (d *bufferedDLQImpl) flush() {
 }
 
 func kafkaMessageKey(msg kafka.Message) string {
-	return fmt.Sprintf("%s%d%d", msg.Topic(), msg.Partition(), msg.Offset())
+	return fmt.Sprintf("%s-%d-%d", msg.Topic(), msg.Partition(), msg.Offset())
 }
 
 func (d *bufferedDLQImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
@@ -280,6 +282,7 @@ func newErrorMap() *errorMap {
 }
 
 // GetAndRemove returns the error or nil associated with this key.
+// This is a blocking call until the error has ben written to the errorMap.
 func (m *errorMap) GetAndRemove(key string) error {
 	m.cond.L.Lock()
 	for !m.contains(key) {
