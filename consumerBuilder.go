@@ -13,7 +13,7 @@ import (
 
 type (
 	consumerBuilder struct {
-		buildErrors consumerBuildErrorList
+		buildErrors *consumerBuildErrorList
 		topics      kafka.ConsumerTopicList
 
 		saramaConsumerMap  map[string]consumer.SaramaConsumer
@@ -28,7 +28,9 @@ type (
 		saramaConfig *cluster.Config
 	}
 
-	consumerBuildErrorList []ConsumerBuildError
+	consumerBuildErrorList struct {
+		errs []ConsumerBuildError
+	}
 
 	// ConsumerBuildError is an error that encapsulates a Topic that could not be consumed
 	// due to some error.
@@ -41,13 +43,14 @@ type (
 // HasConsumerBuildError can be used to test whether NewConsumer returned a consumer
 // consuming from a subset of requested topics.
 func HasConsumerBuildError(err error) []ConsumerBuildError {
-	return err.(consumerBuildErrorList)
+	be := err.(*consumerBuildErrorList)
+	return be.errs
 }
 
 func newConsumerBuilder(logger *zap.Logger, scope tally.Scope, config *kafka.ConsumerConfig, opts *consumer.Options) *consumerBuilder {
 	saramaConfig := buildSaramaConfig(opts)
 	return &consumerBuilder{
-		buildErrors:        make([]ConsumerBuildError, 0, 10),
+		buildErrors:        newConsumerBuildErrorList(),
 		topics:             config.TopicList,
 		saramaConsumerMap:  nil,
 		saramaProducerMap:  nil,
@@ -142,9 +145,7 @@ func (c *consumerBuilder) buildSaramaConsumerMap(f func([]string, string, []stri
 		brokerList := topicList[0].BrokerList
 		sc, err := f(brokerList, c.config.GroupName, topicList.TopicNames(), c.saramaConfig)
 		if err != nil {
-			for _, topic := range topicList {
-				c.buildErrors = append(c.buildErrors, ConsumerBuildError{Topic: topic, error: err})
-			}
+			c.buildErrors.AddAll(topicList, err)
 			continue
 		}
 		saramaConsumerMap[cluster] = sc
@@ -193,7 +194,7 @@ func (c *consumerBuilder) dlqClusterTopicsMap() map[string]kafka.ConsumerTopicLi
 			topicList = make([]kafka.ConsumerTopic, 0, 10)
 		}
 		topicList = append(topicList, consumerTopic)
-		clusterTopicMap[consumerTopic.Cluster] = topicList
+		clusterTopicMap[consumerTopic.DLQ.Cluster] = topicList
 	}
 	return clusterTopicMap
 }
@@ -239,22 +240,28 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	return config
 }
 
-func (c consumerBuildErrorList) AddAll(topics kafka.ConsumerTopicList, err error) {
-	for _, topic := range topics {
-		c = append(c, ConsumerBuildError{Topic: topic, error: err})
+func newConsumerBuildErrorList() *consumerBuildErrorList {
+	return &consumerBuildErrorList{
+		errs: make([]ConsumerBuildError, 0, 10),
 	}
 }
 
-func (c consumerBuildErrorList) Add(topic kafka.ConsumerTopic, err error) {
-	c = append(c, ConsumerBuildError{Topic: topic, error: err})
+func (c *consumerBuildErrorList) AddAll(topics kafka.ConsumerTopicList, err error) {
+	for _, topic := range topics {
+		c.errs = append(c.errs, ConsumerBuildError{Topic: topic, error: err})
+	}
 }
 
-func (c consumerBuildErrorList) Error() string {
+func (c *consumerBuildErrorList) Add(topic kafka.ConsumerTopic, err error) {
+	c.errs = append(c.errs, ConsumerBuildError{Topic: topic, error: err})
+}
+
+func (c *consumerBuildErrorList) Error() string {
 	return "Building NewConsumer has error"
 }
 
-func (c consumerBuildErrorList) ToError() error {
-	if len(c) == 0 {
+func (c *consumerBuildErrorList) ToError() error {
+	if len(c.errs) == 0 {
 		return nil
 	}
 	return c

@@ -1,6 +1,7 @@
 package kafkaclient
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -14,12 +15,13 @@ import (
 type (
 	ConsumerBuilderTestSuite struct {
 		suite.Suite
-		config                    *kafka.ConsumerConfig
-		opts                      *consumer.Options
-		builder                   *consumerBuilder
-		saramaConsumerConstructor *saramaConsumerConstructorMock
-		saramaProducerConstructor *saramaProducerConstructorMock
-		resolverMock              *resolverMock
+		config                     *kafka.ConsumerConfig
+		opts                       *consumer.Options
+		builder                    *consumerBuilder
+		saramaConsumerConstructor  *saramaConsumerConstructorMock
+		saramaProducerConstructor  *saramaProducerConstructorMock
+		clusterConsumerConstructor *clusterConsumerConstructorMock
+		resolverMock               *resolverMock
 	}
 )
 
@@ -54,6 +56,18 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 					BrokerList: []string{"d1"},
 				},
 			},
+			{
+				Topic: kafka.Topic{
+					Name:       "topic3",
+					Cluster:    "bad-cluster",
+					BrokerList: []string{},
+				},
+				DLQ: kafka.Topic{
+					Name:       "dlq-topic3",
+					Cluster:    "bad-cluster",
+					BrokerList: []string{},
+				},
+			},
 		},
 		GroupName:   "unit-test-cg",
 		Concurrency: 4,
@@ -75,6 +89,7 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 
 	s.saramaConsumerConstructor = &saramaConsumerConstructorMock{errRet: make(map[string]error)}
 	s.saramaProducerConstructor = &saramaProducerConstructorMock{errRet: make(map[string]error)}
+	s.clusterConsumerConstructor = &clusterConsumerConstructorMock{errRet: make(map[string]error)}
 
 	s.builder = newConsumerBuilder(
 		zap.NewNop(),
@@ -85,19 +100,35 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 }
 
 func (s *ConsumerBuilderTestSuite) TestResolveBroker() {
-	topicList := s.config.TopicList
+	s.resolverMock.errs["bad-cluster"] = errors.New("error")
+	topicList := s.config.TopicList[:2]
 	s.builder.resolveBrokers(s.resolverMock)
-	s.NoError(s.builder.buildErrors.ToError())
+	s.Error(s.builder.buildErrors.ToError())
 	s.Equal(topicList, s.builder.topics)
 }
 
 func (s *ConsumerBuilderTestSuite) TestBuildSaramaConsumer() {
+	s.saramaConsumerConstructor.errRet[""] = errors.New("error")
 	s.builder.buildSaramaConsumerMap(s.saramaConsumerConstructor.f)
-	s.NoError(s.builder.buildErrors.ToError())
+	s.Error(s.builder.buildErrors.ToError())
+	s.Equal(1, len(s.builder.saramaConsumerMap))
+	_, ok := s.builder.saramaConsumerMap["production-cluster"]
+	s.True(ok)
 }
 
 func (s *ConsumerBuilderTestSuite) TestBuildSaramaProducerMap() {
-	s.builder.topics = append(s.builder.topics, kafka.ConsumerTopic{Topic: kafka.Topic{Name: "topic3", Cluster: "cluster1", BrokerList: nil}, DLQ: kafka.Topic{Name: "", Cluster: "", BrokerList: nil}})
+	s.saramaProducerConstructor.errRet[""] = errors.New("error")
 	s.builder.buildSaramaProducerMap(s.saramaProducerConstructor.f)
-	s.NoError(s.builder.buildErrors.ToError())
+	s.Error(s.builder.buildErrors.ToError())
+	s.Equal(1, len(s.builder.saramaProducerMap))
+	_, ok := s.builder.saramaProducerMap["dlq-cluster"]
+	s.True(ok)
+}
+
+func (s *ConsumerBuilderTestSuite) TestBuildClusterConsumerMap() {
+	s.builder.resolveBrokers(s.resolverMock)
+	s.builder.buildSaramaConsumerMap(s.saramaConsumerConstructor.f)
+	s.builder.buildSaramaProducerMap(s.saramaProducerConstructor.f)
+	s.NoError(s.builder.buildClusterConsumerMap(s.clusterConsumerConstructor.f))
+	s.Error(s.builder.buildErrors.ToError())
 }

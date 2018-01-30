@@ -28,6 +28,9 @@ import (
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/stretchr/testify/assert"
 	"github.com/uber-go/kafka-client/internal/consumer"
+	"github.com/uber-go/kafka-client/kafka"
+	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 type (
@@ -77,6 +80,11 @@ func (m *resolverMock) ResolveIPForCluster(cluster string) (ip []string, err err
 
 func (m *resolverMock) ResolveClusterForTopic(topic string) (cluster []string, err error) {
 	err = m.errs[topic]
+	return
+}
+
+func (m *clusterConsumerConstructorMock) f(_ string, cluster string, _ *consumer.Options, _ kafka.ConsumerTopicList, _ chan kafka.Message, _ consumer.SaramaConsumer, _ map[string]consumer.DLQ, _ tally.Scope, _ *zap.Logger) (kc kafka.Consumer, err error) {
+	err = m.errRet[cluster]
 	return
 }
 
