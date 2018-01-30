@@ -211,7 +211,7 @@ func (c *consumerBuilder) clusterTopicsMap() map[string]kafka.ConsumerTopicList 
 	return clusterTopicMap
 }
 
-func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) *consumer.Options {
+func buildOptions(config *kafka.ConsumerConfig) *consumer.Options {
 	opts := consumer.DefaultOptions()
 	if config.Concurrency > 0 {
 		opts.Concurrency = config.Concurrency
@@ -222,9 +222,6 @@ func buildOptions(config *kafka.ConsumerConfig, options ...ConsumerOption) *cons
 		opts.OffsetPolicy = config.Offsets.Initial.Offset
 	}
 
-	for _, option := range options {
-		option.apply(opts)
-	}
 	return opts
 }
 

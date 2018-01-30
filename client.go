@@ -63,7 +63,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 // It is possible for NewConsumer to start a consumer which consumes from a subset of topics.
 // If partial construction has occurred, an error will be returned and you can get a list of topics that are not
 // being consumed by using the HasConsumerBuildError() function.
-func (c *Client) NewConsumer(config *kafka.ConsumerConfig, options ...ConsumerOption) (kafka.Consumer, error) {
+func (c *Client) NewConsumer(config *kafka.ConsumerConfig) (kafka.Consumer, error) {
 	opts := buildOptions(config)
 	b := newConsumerBuilder(c.logger, c.tally, config, opts)
 	b.resolveBrokers(c.resolver)
