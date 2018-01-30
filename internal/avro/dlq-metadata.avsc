@@ -1,11 +1,11 @@
 {
 	"type": "record",
-	"namespace": "com.uber.kafka8",
+	"namespace": "com.uber.kafka.dlq",
 	"name": "dlqMetadata",
 	"fields": [
 		{
 			"name": "retryCount",
-			"type": "long"
+			"type": "long",
 		},
 		{
 			"name": "data",
@@ -24,7 +24,7 @@
 			"type": "long"
 		},
 		{
-	        "name": "timestamp",
+	        "name": "timestampSec",
 	        "type": "long"
 		}
 	]

@@ -12,13 +12,11 @@ import (
 	"math"
 )
 
-// ByteWriter is auto generated.
 type ByteWriter interface {
 	Grow(int)
 	WriteByte(byte) error
 }
 
-// StringWriter is auto generated.
 type StringWriter interface {
 	WriteString(string) (int, error)
 }
@@ -102,7 +100,7 @@ func readDlqMetadata(r io.Reader) (*DlqMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	str.Timestamp, err = readLong(r)
+	str.TimestampSec, err = readLong(r)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +176,7 @@ func writeDlqMetadata(r *DlqMetadata, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	err = writeLong(r.Timestamp, w)
+	err = writeLong(r.TimestampSec, w)
 	if err != nil {
 		return err
 	}

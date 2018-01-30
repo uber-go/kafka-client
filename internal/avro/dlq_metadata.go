@@ -10,34 +10,29 @@ import (
 	"io"
 )
 
-// DlqMetadata is auto generated.
 type DlqMetadata struct {
-	RetryCount int64
-	Data       []byte
-	Topic      string
-	Partition  int64
-	Offset     int64
-	Timestamp  int64
+	RetryCount   int64
+	Data         []byte
+	Topic        string
+	Partition    int64
+	Offset       int64
+	TimestampSec int64
 }
 
-// DeserializeDlqMetadata is auto generated.
 func DeserializeDlqMetadata(r io.Reader) (*DlqMetadata, error) {
 	return readDlqMetadata(r)
 }
 
-// NewDlqMetadata is auto generated.
 func NewDlqMetadata() *DlqMetadata {
 	v := &DlqMetadata{}
 
 	return v
 }
 
-// Schema is auto generated.
 func (r *DlqMetadata) Schema() string {
-	return "{\"fields\":[{\"name\":\"retryCount\",\"type\":\"long\"},{\"name\":\"data\",\"type\":\"bytes\"},{\"name\":\"topic\",\"type\":\"string\"},{\"name\":\"partition\",\"type\":\"long\"},{\"name\":\"offset\",\"type\":\"long\"},{\"name\":\"timestamp\",\"type\":\"long\"}],\"name\":\"dlqMetadata\",\"namespace\":\"com.uber.kafka8\",\"type\":\"record\"}"
+	return "{\"fields\":[{\"name\":\"retryCount\",\"type\":\"long\"},{\"name\":\"data\",\"type\":\"bytes\"},{\"name\":\"topic\",\"type\":\"string\"},{\"name\":\"partition\",\"type\":\"long\"},{\"name\":\"offset\",\"type\":\"long\"},{\"name\":\"timestampSec\",\"type\":\"long\"}],\"name\":\"dlqMetadata\",\"namespace\":\"com.uber.kafka.dlq\",\"type\":\"record\"}"
 }
 
-// Serialize is auto generated.
 func (r *DlqMetadata) Serialize(w io.Writer) error {
 	return writeDlqMetadata(r, w)
 }

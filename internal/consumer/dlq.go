@@ -120,7 +120,7 @@ func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
 		Topic:      m.Topic(),
 		Partition:  int64(m.Partition()),
 		Offset:     m.Offset(),
-		Timestamp:  m.Timestamp().Unix(),
+		TimestampSec:  m.Timestamp().Unix(),
 	}
 	if err := metadata.Serialize(key); err != nil {
 		return nil, err
