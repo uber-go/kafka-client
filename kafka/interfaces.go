@@ -54,6 +54,7 @@ type (
 		// Timestamp returns the timestamp for this message
 		Timestamp() time.Time
 		// RetryCount is an incrementing integer denoting the number of times this message has been redelivered.
+		// The first delivery of the message will be 0, incrementing on each subsequent redelivery.
 		RetryCount() int64
 		// Ack marks the message as successfully processed.
 		Ack() error

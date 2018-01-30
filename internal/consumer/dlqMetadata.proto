@@ -1,10 +1,10 @@
 syntax = "proto3";
 
 message dlqMetadata {
-    int64 retryCount = 1;
+    int64 retry_count = 1;
     string topic = 2;
     int32 partition = 3;
     int64 offset = 4;
-    int64 timestamp_sec = 5;
+    int64 timestamp_ns = 5;
     bytes data = 6;
 }

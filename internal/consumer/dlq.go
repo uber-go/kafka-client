@@ -113,12 +113,12 @@ func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, er
 
 func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
 	metadata := &DlqMetadata{
-		RetryCount:   0,
-		Data:         m.Key(),
-		Topic:        m.Topic(),
-		Partition:    m.Partition(),
-		Offset:       m.Offset(),
-		TimestampSec: m.Timestamp().Unix(),
+		RetryCount:  0,
+		Data:        m.Key(),
+		Topic:       m.Topic(),
+		Partition:   m.Partition(),
+		Offset:      m.Offset(),
+		TimestampNs: m.Timestamp().UnixNano(),
 	}
 	return proto.Marshal(metadata)
 }
