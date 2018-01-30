@@ -1,0 +1,31 @@
+{
+	"type": "record",
+	"namespace": "com.uber.kafka8",
+	"name": "dlqMetadata",
+	"fields": [
+		{
+			"name": "retryCount",
+			"type": "long"
+		},
+		{
+			"name": "data",
+			"type": "bytes"
+		},
+		{
+			"name": "topic",
+			"type": "string"
+		},
+		{
+			"name": "partition",
+			"type": "long"
+		},
+		{
+			"name": "offset",
+			"type": "long"
+		},
+		{
+	        "name": "timestamp",
+	        "type": "long"
+		}
+	]
+}

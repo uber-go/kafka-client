@@ -205,7 +205,7 @@ func newMockDLQProducer() *mockDLQProducer {
 func (d *mockDLQProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	d.Lock()
 	defer d.Unlock()
-	key := string(msg.Key.(sarama.StringEncoder))
+	key := string(msg.Key.(sarama.ByteEncoder))
 	if d.size < 5 {
 		// for the first few messages throw errors to test backoff/retry
 		if _, ok := d.keys[key]; !ok {
