@@ -21,11 +21,10 @@
 package consumer
 
 import (
-	"bytes"
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/uber-go/kafka-client/internal/avro"
+	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/backoff"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -113,19 +112,15 @@ func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, er
 }
 
 func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
-	key := new(bytes.Buffer)
-	metadata := &avro.DlqMetadata{
-		RetryCount: 0,
-		Data:       m.Key(),
-		Topic:      m.Topic(),
-		Partition:  int64(m.Partition()),
-		Offset:     m.Offset(),
-		TimestampSec:  m.Timestamp().Unix(),
+	metadata := &DlqMetadata{
+		RetryCount:   0,
+		Data:         m.Key(),
+		Topic:        m.Topic(),
+		Partition:    m.Partition(),
+		Offset:       m.Offset(),
+		TimestampSec: m.Timestamp().Unix(),
 	}
-	if err := metadata.Serialize(key); err != nil {
-		return nil, err
-	}
-	return key.Bytes(), nil
+	return proto.Marshal(metadata)
 }
 
 // NewDLQNoop returns a DLQ that drops everything on the floor
