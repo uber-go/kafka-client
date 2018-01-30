@@ -1,7 +1,7 @@
 package consumer
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -61,7 +61,7 @@ func (s *DLQTestSuite) TestBatchProducer() {
 		Msg: &sarama.ProducerMessage{
 			Metadata: kafkaMessageKey(m2),
 		},
-		Err: fmt.Errorf("error"),
+		Err: errors.New("error"),
 	}
 	s.saramaProducer.errs = append(s.saramaProducer.errs, pe)
 	go s.dlq.eventLoop()

@@ -81,7 +81,7 @@ type (
 
 	messageBufferMap struct {
 		buf map[string]*sarama.ProducerMessage
-		sync.Mutex
+		sync.RWMutex
 	}
 )
 
@@ -358,7 +358,7 @@ func (m *messageBufferMap) keys() []string {
 }
 
 func (m *messageBufferMap) Size() int {
-	m.Lock()
-	defer m.Unlock()
+	m.RLock()
+	defer m.RUnlock()
 	return len(m.buf)
 }
