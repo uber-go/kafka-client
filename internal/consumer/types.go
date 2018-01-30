@@ -43,22 +43,6 @@ type (
 		MarkPartitionOffset(topic string, partition int32, offset int64, metadata string)
 	}
 
-	// Options contains the tunables for a
-	// kafka consumer. Currently, these options are
-	// not configurable except for unit test
-	Options struct {
-		RcvBufferSize          int // aggregate message buffer size
-		PartitionRcvBufferSize int // message buffer size for each partition
-		Concurrency            int // number of goroutines that will concurrently process messages
-		OffsetPolicy           int64
-		OffsetCommitInterval   time.Duration
-		RebalanceDwellTime     time.Duration
-		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
-		ConsumerMode           cluster.ConsumerMode
-		// Limits are the consumer limits per topic partitions
-		Limits map[TopicPartition]int64
-	}
-
 	// saramaConsumer is an internal version of SaramaConsumer that implements a close method that can be safely called
 	// multiple times.
 	saramaConsumer struct {
@@ -96,7 +80,12 @@ func newSaramaConsumer(c SaramaConsumer) (SaramaConsumer, error) {
 }
 
 // NewSaramaProducer returns a new SyncProducer that has Close method that can be called multiple times.
-func NewSaramaProducer(brokers []string, config *sarama.Config) (sarama.SyncProducer, error) {
+func NewSaramaProducer(brokers []string) (sarama.SyncProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+	config.Producer.Flush.Frequency = time.Millisecond * 500
+
 	p, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {
 		return nil, err

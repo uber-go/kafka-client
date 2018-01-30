@@ -45,18 +45,21 @@ type (
 		dlqTopic       string
 		options        *Options
 		logger         *zap.Logger
-		limits         topicPartitionLimitMap
+		limits         TopicPartitionLimitMap
 	}
 )
 
-var testConsumerOptions = Options{
-	Concurrency:            4,
-	RcvBufferSize:          4,
-	PartitionRcvBufferSize: 2,
-	OffsetCommitInterval:   25 * time.Millisecond,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      5 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
+func testConsumerOptions() *Options {
+	return &Options{
+		Concurrency:            4,
+		RcvBufferSize:          4,
+		PartitionRcvBufferSize: 2,
+		OffsetCommitInterval:   25 * time.Millisecond,
+		RebalanceDwellTime:     time.Second,
+		MaxProcessingTime:      5 * time.Millisecond,
+		OffsetPolicy:           sarama.OffsetOldest,
+		Limits:                 NewTopicPartitionLimitMap(nil),
+	}
 }
 
 var _ kafka.Consumer = (*clusterConsumer)(nil)
@@ -85,8 +88,8 @@ func (s *ConsumerTestSuite) SetupTest() {
 		GroupName:   "unit-test-cg",
 		Concurrency: 4,
 	}
-	s.options = &testConsumerOptions
-	s.limits = newTopicLimitMap(nil)
+	s.options = testConsumerOptions()
+	s.limits = NewTopicPartitionLimitMap(nil)
 	s.logger = zap.NewNop()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
@@ -247,7 +250,7 @@ func (s *ConsumerTestSuite) TestDLQ() {
 func (s *ConsumerTestSuite) TestConsumerWithLimit() {
 	// partition 0 will receive 1 message
 	// partition 1 will receive 0 messages
-	limits := newTopicLimitMap(map[TopicPartition]int64{
+	limits := NewTopicPartitionLimitMap(map[TopicPartition]int64{
 		{Topic: s.topic, Partition: 0}: 1,
 	})
 	limits.checkInterval = time.Millisecond

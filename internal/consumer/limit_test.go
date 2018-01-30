@@ -27,8 +27,8 @@ import (
 
 type TopicPartitionLimitMapTestSuite struct {
 	suite.Suite
-	limitMap   topicPartitionLimitMap
-	noLimitMap topicPartitionLimitMap
+	limitMap   TopicPartitionLimitMap
+	noLimitMap TopicPartitionLimitMap
 }
 
 func TestTopicPartitionLimitMap(t *testing.T) {
@@ -36,10 +36,10 @@ func TestTopicPartitionLimitMap(t *testing.T) {
 }
 
 func (s *TopicPartitionLimitMapTestSuite) SetupTest() {
-	s.limitMap = newTopicLimitMap(map[TopicPartition]int64{
+	s.limitMap = NewTopicPartitionLimitMap(map[TopicPartition]int64{
 		{Topic: "t", Partition: 0}: 100,
 	})
-	s.noLimitMap = newTopicLimitMap(nil)
+	s.noLimitMap = NewTopicPartitionLimitMap(nil)
 }
 
 func (s *TopicPartitionLimitMapTestSuite) TestHasLimits() {

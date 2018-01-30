@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
@@ -45,6 +46,20 @@ type (
 		Partition int32
 	}
 
+	// multiConsumerMap is a map that contains multiple kafka consumers
+	multiClusterConsumer struct {
+		name            string
+		topics          kafka.ConsumerTopicList
+		consumers       map[string]kafka.Consumer
+		saramaConsumers map[string]SaramaConsumer
+		saramaProducers map[string]sarama.SyncProducer
+		msgCh           chan kafka.Message
+		doneC           chan struct{}
+		tally           tally.Scope
+		logger          *zap.Logger
+		lifecycle       *util.RunLifecycle
+	}
+
 	// clusterConsumer is an implementation of kafka consumer that consumes messages from a single cluster
 	clusterConsumer struct {
 		name       string
@@ -55,7 +70,7 @@ type (
 		producers  map[string]DLQ // Map of DLQ topic -> DLQ
 		partitions topicPartitionMap
 		options    *Options
-		limits     topicPartitionLimitMap
+		limits     TopicPartitionLimitMap
 		tally      tally.Scope
 		logger     *zap.Logger
 		lifecycle  *util.RunLifecycle
@@ -63,6 +78,53 @@ type (
 		doneC      chan struct{}
 	}
 )
+
+// NewMultiClusterConsumer returns a new multi cluster consumer.
+func NewMultiClusterConsumer(
+	config *kafka.ConsumerConfig,
+	topics kafka.ConsumerTopicList,
+	consumers map[string]kafka.Consumer,
+	saramaConsumers map[string]SaramaConsumer,
+	saramaProducers map[string]sarama.SyncProducer,
+	msgCh chan kafka.Message,
+	scope tally.Scope,
+	log *zap.Logger,
+) (kafka.Consumer, error) {
+	return newMultiClusterConsumer(
+		config,
+		topics,
+		consumers,
+		saramaConsumers,
+		saramaProducers,
+		msgCh,
+		scope,
+		log,
+	)
+}
+
+func newMultiClusterConsumer(
+	config *kafka.ConsumerConfig,
+	topics kafka.ConsumerTopicList,
+	consumers map[string]kafka.Consumer,
+	saramaConsumers map[string]SaramaConsumer,
+	saramaProducers map[string]sarama.SyncProducer,
+	msgCh chan kafka.Message,
+	scope tally.Scope,
+	log *zap.Logger,
+) (*multiClusterConsumer, error) {
+	return &multiClusterConsumer{
+		name:            config.GroupName,
+		topics:          topics,
+		consumers:       consumers,
+		saramaConsumers: saramaConsumers,
+		saramaProducers: saramaProducers,
+		msgCh:           msgCh,
+		doneC:           make(chan struct{}),
+		tally:           scope,
+		logger:          log,
+		lifecycle:       util.NewRunLifecycle(config.GroupName+"-multiClusterConsumer", log),
+	}, nil
+}
 
 // NewClusterConsumer returns a Kafka Consumer that consumes from a single Kafka cluster
 func NewClusterConsumer(
@@ -84,7 +146,7 @@ func NewClusterConsumer(
 		msgCh,
 		consumer,
 		producers,
-		newTopicLimitMap(options.Limits),
+		options.Limits,
 		tally,
 		logger,
 	)
@@ -98,7 +160,7 @@ func newClusterConsumer(
 	msgCh chan kafka.Message,
 	consumer SaramaConsumer,
 	producers map[string]DLQ,
-	limits topicPartitionLimitMap,
+	limits TopicPartitionLimitMap,
 	tally tally.Scope,
 	logger *zap.Logger,
 ) (*clusterConsumer, error) {
@@ -118,6 +180,54 @@ func newClusterConsumer(
 		doneC:      make(chan struct{}),
 		lifecycle:  util.NewRunLifecycle(groupName+"-consumer-"+cluster, logger),
 	}, nil
+}
+
+func (c *multiClusterConsumer) Name() string {
+	return c.name
+}
+
+func (c *multiClusterConsumer) Topics() []string {
+	return c.topics.TopicNames()
+}
+
+// Start will fail to start if there is any clusterConsumer that fails.
+func (c *multiClusterConsumer) Start() error {
+	return c.lifecycle.Start(func() (err error) {
+		for clusterName, consumer := range c.consumers {
+			if err = consumer.Start(); err != nil {
+				c.logger.With(
+					zap.Error(err),
+					zap.String("cluster", clusterName),
+				).Error("failed to start cluster consumer")
+				c.Stop()
+				break
+			}
+		}
+		return
+	})
+}
+
+func (c *multiClusterConsumer) Stop() {
+	c.lifecycle.Stop(func() {
+		for _, consumer := range c.consumers {
+			consumer.Stop()
+		}
+		for _, sc := range c.saramaConsumers {
+			sc.Close()
+		}
+		for _, sp := range c.saramaProducers {
+			sp.Close()
+		}
+		close(c.doneC)
+	})
+}
+
+func (c *multiClusterConsumer) Closed() <-chan struct{} {
+	return c.doneC
+}
+
+func (c *multiClusterConsumer) Messages() <-chan kafka.Message {
+	return c.msgCh
 }
 
 // Name returns the name of this consumer group

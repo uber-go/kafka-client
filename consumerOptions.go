@@ -21,10 +21,7 @@
 package kafkaclient
 
 import (
-	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
-	"time"
 )
 
 // ConsumerOption is the type for optional arguments to the NewConsumer constructor.
@@ -36,18 +33,6 @@ type (
 		limits map[consumer.TopicPartition]int64
 	}
 )
-
-var defaultOptions = consumer.Options{
-	Concurrency:            1024,
-	RcvBufferSize:          2 * 1024, // twice the concurrency for compute/io overlap
-	PartitionRcvBufferSize: 32,
-	OffsetCommitInterval:   time.Second,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      250 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
-	ConsumerMode:           cluster.ConsumerModePartitions,
-	Limits:                 nil,
-}
 
 // WithConsumerLimits sets consumer limits for a consumer.
 // If consumer limits are set, the consumer will only consume messages from the specified topic-partitions
@@ -67,5 +52,5 @@ func WithConsumerLimits(limits map[string]map[int32]int64) ConsumerOption {
 }
 
 func (c consumerLimitOption) apply(opts *consumer.Options) {
-	opts.Limits = c.limits
+	opts.Limits = consumer.NewTopicPartitionLimitMap(c.limits)
 }
