@@ -24,11 +24,11 @@ dependencies:
 	glide --version || go get -u -f github.com/Masterminds/glide
 	glide install
 	@echo "Installing test dependencies..."
-	go install ./vendor/github.com/axw/gocov/gocov
-	go install ./vendor/github.com/mattn/goveralls
+	go get -u -f github.com/axw/gocov/gocov
+	go get -u -f github.com/mattn/goveralls
 ifdef SHOULD_LINT
 	@echo "Installing golint..."
-	go install ./vendor/github.com/golang/lint/golint
+	go get -u -f github.com/golang/lint/golint
 else
 	@echo "Not installing golint, since we don't expect to lint on" $(GO_VERSION)
 endif
