@@ -23,12 +23,10 @@ package consumer
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	"github.com/uber-go/kafka-client/internal/backoff"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -48,118 +46,48 @@ type (
 		// This is a synchronous call and will block until sending is successful.
 		Add(m kafka.Message) error
 	}
-	dlqImpl struct {
-		topic       string
-		producer    sarama.SyncProducer
-		retryPolicy backoff.RetryPolicy
-		tally       tally.Scope
-		logger      *zap.Logger
-	}
+
 	dlqNoop struct{}
 
-	bufferedDLQImpl struct {
+	// bufferedErrorTopic is a client side abstraction for an error topic on the Kafka cluster.
+	// This library uses the error topic as a base abstraction for retry and dlq topics.
+	//
+	// bufferedErrorTopic internally batches messages, so calls to Add may block until the internal
+	// buffer is flushed and a batch of messages is send to the cluster.
+	bufferedErrorTopic struct {
 		topic    string
-		producer sarama.SyncProducer
+		cluster string
+		producer sarama.AsyncProducer
 
-		timeLimit <-chan time.Time
-		sizeLimit <-chan time.Time
 		stopC     chan struct{}
-		closedC   chan struct{}
-
-		messageBufferMap *messageBufferMap
-		errorMap         *errorMap
+		doneC   chan struct{}
 
 		scope     tally.Scope
 		logger    *zap.Logger
 		lifecycle *util.RunLifecycle
 	}
-
-	errorMap struct {
-		m    map[string]error
-		cond *sync.Cond
-	}
-
-	messageBufferMap struct {
-		buf map[string]*sarama.ProducerMessage
-		sync.RWMutex
-	}
-)
-
-const (
-	dlqRetryInitialInterval = 200 * time.Millisecond
-	dlqRetryMaxInterval     = 10 * time.Second
 )
 
 // NewDLQ returns a DLQ writer for writing to a specific DLQ topic
-func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
-	return &dlqImpl{
-		topic:       topic,
-		producer:    producer,
-		retryPolicy: newDLQRetryPolicy(),
-		tally:       scope,
-		logger:      logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
-	}
-}
-
-func (d *dlqImpl) Start() error {
-	return nil
-}
-
-// Add blocks until successfully enqueuing the given
-// message into the error queue
-func (d *dlqImpl) Add(m kafka.Message) error {
-	sm, err := d.newSaramaMessage(m)
-	if err != nil {
-		return err
-	}
-	return backoff.Retry(func() error { return d.add(sm) }, d.retryPolicy, d.isRetryable)
-}
-
-func (d *dlqImpl) Stop() {
-	d.producer.Close()
-}
-
-func (d *dlqImpl) add(m *sarama.ProducerMessage) error {
-	_, _, err := d.producer.SendMessage(m)
-	if err != nil {
-		d.logger.Error("error sending message to DLQ", zap.Error(err))
-	}
-	return err
-}
-
-func (d *dlqImpl) isRetryable(err error) bool {
-	return true
-}
-
-func newDLQRetryPolicy() backoff.RetryPolicy {
-	policy := backoff.NewExponentialRetryPolicy(dlqRetryInitialInterval)
-	policy.SetMaximumInterval(dlqRetryMaxInterval)
-	policy.SetExpirationInterval(backoff.NoInterval)
-	return policy
-}
-
-func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, error) {
-	key, err := d.encodeDLQMetadata(m)
+func NewDLQ(topic, cluster string, client sarama.Client, scope tally.Scope, logger *zap.Logger) (DLQ, error) {
+	asyncProducer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		return nil, err
 	}
-	return &sarama.ProducerMessage{
-		Topic: d.topic,
-		Key:   sarama.ByteEncoder(key),
-		Value: sarama.ByteEncoder(m.Value()),
-	}, nil
+	return newBufferedDLQ(topic, cluster, asyncProducer, scope, logger), nil
 }
 
-func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
-	metadata := &DLQMetadata{
-		RetryCount:  0,
-		Data:        m.Key(),
-		Topic:       m.Topic(),
-		Partition:   m.Partition(),
-		Offset:      m.Offset(),
-		TimestampNs: m.Timestamp().UnixNano(),
+func newBufferedDLQ(topic, cluster string, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
+	return &bufferedErrorTopic{
+		topic: topic,
+		cluster: cluster,
+		producer: producer,
+		stopC: make(chan struct{}),
+		doneC: make(chan struct{}),
+		scope: scope,
+		logger: logger,
+		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster), logger),
 	}
-	return proto.Marshal(metadata)
 }
 
 // NewDLQNoop returns a DLQ that drops everything on the floor
@@ -171,194 +99,87 @@ func (d *dlqNoop) Add(m kafka.Message) error { return nil }
 func (d *dlqNoop) Stop()                     {}
 func (d *dlqNoop) Start() error              { return nil }
 
-func newBufferedDLQImpl(topic string, producer sarama.SyncProducer, timeLimit <-chan time.Time, sizeLimit <-chan time.Time, tally tally.Scope, log *zap.Logger) *bufferedDLQImpl {
-	return &bufferedDLQImpl{
-		topic:            topic,
-		producer:         producer,
-		timeLimit:        timeLimit,
-		sizeLimit:        sizeLimit,
-		stopC:            make(chan struct{}),
-		closedC:          make(chan struct{}),
-		messageBufferMap: newMessageBufferMap(),
-		errorMap:         newErrorMap(),
-		scope:            tally,
-		logger:           log,
-		lifecycle:        util.NewRunLifecycle(fmt.Sprintf("dlq-%s", topic), log),
-	}
-}
-
-func (d *bufferedDLQImpl) Start() error {
+func (d *bufferedErrorTopic) Start() error {
 	return d.lifecycle.Start(func() error {
-		go d.eventLoop()
+		go d.asyncProducerResponseLoop()
 		return nil
 	})
 }
 
-func (d *bufferedDLQImpl) Stop() {
+func (d *bufferedErrorTopic) Stop() {
 	d.lifecycle.Stop(func() {
 		close(d.stopC)
-		<-d.closedC
+		<-d.doneC
 	})
 }
 
-func (d *bufferedDLQImpl) Add(msg kafka.Message) error {
-	key := kafkaMessageKey(msg)
-	sm := d.newSaramaMessage(msg)
-	d.messageBufferMap.Add(key, sm)
-	return d.errorMap.GetAndRemove(key) // errorMap.Get blocks until there is error or nil for this message
+func (d *bufferedErrorTopic) Add(m kafka.Message) error {
+	metadata := &DLQMetadata{
+		RetryCount:  m.RetryCount() + 1,
+		Data:        m.Key(),
+		Topic:       m.Topic(),
+		Partition:   m.Partition(),
+		Offset:      m.Offset(),
+		TimestampNs: m.Timestamp().UnixNano(),
+	}
+
+	key, err := proto.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	value := m.Value()
+	// TODO (gteo): Use a channel pool
+	responseC := make(chan error)
+
+	sm := d.newSaramaMessage(key, value, responseC)
+	d.producer.Input() <- sm
+
+	select {
+	case err := <- responseC: // block until response is received
+		return err
+	case <- d.stopC:
+		return errors.New("closing producer failed to send")
+	}
 }
 
-func (d *bufferedDLQImpl) eventLoop() {
+func (d *bufferedErrorTopic) asyncProducerResponseLoop() {
 	for {
 		select {
-		case <-d.timeLimit:
-			d.flush()
-		case <-d.sizeLimit:
-			d.flush()
-		case <-d.stopC:
+		case msg := <- d.producer.Successes():
+			if msg == nil {
+				continue
+			}
+			responseC, ok := msg.Metadata.(chan error)
+			if !ok {
+				continue
+			}
+			responseC <- nil
+		case perr := <- d.producer.Errors():
+			if perr == nil {
+				continue
+			}
+			responseC,  ok := perr.Msg.Metadata.(chan error)
+			if !ok {
+				continue
+			}
+			err := perr.Err
+			responseC <- err
+		case d.stopC:
 			d.shutdown()
 			return
 		}
 	}
 }
 
-func (d *bufferedDLQImpl) shutdown() {
-	d.flush()
-	close(d.closedC)
+func (d *bufferedErrorTopic) shutdown() {
+	close(d.doneC)
 }
 
-func (d *bufferedDLQImpl) flush() {
-	d.messageBufferMap.Lock()
-	defer d.messageBufferMap.Unlock()
-	defer d.messageBufferMap.clear()
-
-	// Get and send buffered messages
-	err := d.producer.SendMessages(d.messageBufferMap.messages())
-
-	// Some messages may fail, so parse failures into errorMap
-	producerErrs, ok := err.(sarama.ProducerErrors)
-	if !ok {
-		d.errorMap.PutAll(d.messageBufferMap.keys(), errors.New("failed to send message to DLQ"))
-		return
-	}
-
-	for _, producerErr := range producerErrs {
-		err := producerErr.Err
-		key, ok := producerErr.Msg.Metadata.(string)
-		if !ok {
-			d.errorMap.Put(key, errors.New("failed to send message to DLQ"))
-			continue
-		}
-		d.errorMap.Put(key, err)
-	}
-
-	// Put nil as default for the errors in errorMap
-	// because cond waits on non-existence of key.
-	d.errorMap.PutAll(d.messageBufferMap.keys(), nil)
-
-	// Broadcast that errorMap has been updated
-	d.errorMap.cond.Broadcast()
-}
-
-func kafkaMessageKey(msg kafka.Message) string {
-	return fmt.Sprintf("%s-%d-%d", msg.Topic(), msg.Partition(), msg.Offset())
-}
-
-func (d *bufferedDLQImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
+func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan error) *sarama.ProducerMessage {
 	return &sarama.ProducerMessage{
 		Topic:    d.topic,
-		Key:      sarama.StringEncoder(m.Key()),
-		Value:    sarama.StringEncoder(m.Value()),
-		Metadata: kafkaMessageKey(m),
+		Key:     sarama.ByteEncoder(key),
+		Value: sarama.ByteEncoder(value),
+		Metadata: responseC,
 	}
-}
-
-func newErrorMap() *errorMap {
-	l := new(sync.Mutex)
-	return &errorMap{
-		m:    make(map[string]error),
-		cond: sync.NewCond(l),
-	}
-}
-
-// GetAndRemove returns the error or nil associated with this key.
-// This is a blocking call until the error has ben written to the errorMap.
-func (m *errorMap) GetAndRemove(key string) error {
-	m.cond.L.Lock()
-	for !m.contains(key) {
-		m.cond.Wait()
-	}
-	err, _ := m.m[key]
-	delete(m.m, key)
-	m.cond.L.Unlock()
-	return err
-}
-
-func (m *errorMap) Put(key string, err error) {
-	m.cond.L.Lock()
-	m.m[key] = err
-	m.cond.L.Unlock()
-}
-
-// PutAll assigns the err to all of the keys specified in the input unless the key already exists.
-// If the key already exists, then the old value is retained.
-func (m *errorMap) PutAll(keys []string, err error) {
-	m.cond.L.Lock()
-	for _, key := range keys {
-		if _, ok := m.m[key]; !ok {
-			m.m[key] = err
-		}
-	}
-	m.cond.L.Unlock()
-}
-
-func (m *errorMap) contains(key string) bool {
-	_, ok := m.m[key]
-	return ok
-}
-
-func (m *errorMap) Size() int {
-	m.cond.L.Lock()
-	defer m.cond.L.Unlock()
-	return len(m.m)
-}
-
-func newMessageBufferMap() *messageBufferMap {
-	return &messageBufferMap{
-		buf: make(map[string]*sarama.ProducerMessage),
-	}
-}
-
-func (m *messageBufferMap) Add(key string, msg *sarama.ProducerMessage) {
-	m.Lock()
-	m.buf[key] = msg
-	m.Unlock()
-}
-
-func (m *messageBufferMap) clear() {
-	for key := range m.buf {
-		delete(m.buf, key)
-	}
-}
-
-func (m *messageBufferMap) messages() []*sarama.ProducerMessage {
-	buf := make([]*sarama.ProducerMessage, 0, len(m.buf))
-	for _, msg := range m.buf {
-		buf = append(buf, msg)
-	}
-	return buf
-}
-
-func (m *messageBufferMap) keys() []string {
-	buf := make([]string, 0, len(m.buf))
-	for key := range m.buf {
-		buf = append(buf, key)
-	}
-	return buf
-}
-
-func (m *messageBufferMap) Size() int {
-	m.RLock()
-	defer m.RUnlock()
-	return len(m.buf)
 }
