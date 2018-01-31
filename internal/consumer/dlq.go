@@ -112,7 +112,7 @@ func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, er
 }
 
 func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
-	metadata := &DlqMetadata{
+	metadata := &DLQMetadata{
 		RetryCount:  0,
 		Data:        m.Key(),
 		Topic:       m.Topic(),
