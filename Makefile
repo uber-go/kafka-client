@@ -47,7 +47,7 @@ ifdef SHOULD_LINT
 	@echo "Checking vet..."
 	@$(foreach dir,$(PKG_FILES),go tool vet $(VET_RULES) $(dir) 2>&1 | tee -a lint.log;)
 	@echo "Checking lint..."
-	@$(foreach dir,$(PKGS),golint $(dir) 2>&1 | tee -a lint.log;)
+	@$(foreach dir,$(PKGS),golint $(dir) | grep -v "pb" 2>&1 | tee -a lint.log;)
 	@echo "Checking for unresolved FIXMEs..."
 	@git grep -i fixme | grep -v -e vendor -e Makefile | tee -a lint.log
 	@echo "Checking for license headers..."
