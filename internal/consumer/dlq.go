@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/backoff"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -68,7 +69,10 @@ func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Sco
 // Add blocks until successfully enqueuing the given
 // message into the error queue
 func (d *dlqImpl) Add(m kafka.Message) error {
-	sm := d.newSaramaMessage(m)
+	sm, err := d.newSaramaMessage(m)
+	if err != nil {
+		return err
+	}
 	return backoff.Retry(func() error { return d.add(sm) }, d.retryPolicy, d.isRetryable)
 }
 
@@ -95,12 +99,28 @@ func newDLQRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func (d *dlqImpl) newSaramaMessage(m kafka.Message) *sarama.ProducerMessage {
+func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, error) {
+	key, err := d.encodeDLQMetadata(m)
+	if err != nil {
+		return nil, err
+	}
 	return &sarama.ProducerMessage{
 		Topic: d.topic,
-		Key:   sarama.StringEncoder(m.Key()),
-		Value: sarama.StringEncoder(m.Value()),
+		Key:   sarama.ByteEncoder(key),
+		Value: sarama.ByteEncoder(m.Value()),
+	}, nil
+}
+
+func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
+	metadata := &DLQMetadata{
+		RetryCount:  0,
+		Data:        m.Key(),
+		Topic:       m.Topic(),
+		Partition:   m.Partition(),
+		Offset:      m.Offset(),
+		TimestampNs: m.Timestamp().UnixNano(),
 	}
+	return proto.Marshal(metadata)
 }
 
 // NewDLQNoop returns a DLQ that drops everything on the floor

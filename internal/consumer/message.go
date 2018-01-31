@@ -29,8 +29,9 @@ import (
 type (
 	// Message is a wrapper around kafka consumer message
 	Message struct {
-		msg *sarama.ConsumerMessage
-		ctx msgContext // consumer metadata, invisible to the application
+		msg        *sarama.ConsumerMessage
+		retryCount int64
+		ctx        msgContext // consumer metadata, invisible to the application
 	}
 	// context that gets piggybacked in the message
 	// will be used when the message is Acked/Nackd
@@ -85,6 +86,11 @@ func (m *Message) Offset() int64 {
 // Timestamp returns the timestamp for this message
 func (m *Message) Timestamp() time.Time {
 	return m.msg.Timestamp
+}
+
+// RetryCount returns the number of times this message has be retried.
+func (m *Message) RetryCount() int64 {
+	return m.retryCount
 }
 
 // Ack acknowledges the message
