@@ -13,3 +13,6 @@ testImport:
   subpackages:
   - assert
   - require
+- package: github.com/axw/gocov
+- package: github.com/mattn/goveralls
+- package: github.com/golang/lint/golint
