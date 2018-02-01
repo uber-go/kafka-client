@@ -116,6 +116,7 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 		tally.NoopScope,
 		s.config,
 		s.opts,
+		nil,
 	)
 }
 
@@ -151,4 +152,21 @@ func (s *ConsumerBuilderTestSuite) TestBuildClusterConsumerMap() {
 	s.builder.buildSaramaProducerMap(s.saramaProducerConstructor.f)
 	s.NoError(s.builder.buildClusterConsumerMap(s.clusterConsumerConstructor.f))
 	s.Error(s.builder.buildErrors.ToError())
+}
+
+func (s *ConsumerBuilderTestSuite) TestBuild() {
+	// no construction error and partial construction disabled
+	_, err := s.builder.build()
+	s.NoError(err)
+
+	// construction error and partial construction enabled
+	partialConstructionOpt := EnablePartialConstruction()
+	s.builder.buildErrors = &consumerErrorList{
+		errs: []ConsumerError{{Topic: kafka.ConsumerTopic{}, error: errors.New("error")}},
+	}
+	buildOpts := []ConsumerOption{partialConstructionOpt}
+	s.builder.buildOpts = buildOpts
+	_, err = s.builder.build()
+	s.NoError(err)
+	s.Equal(1, len(PartialConstructionError(partialConstructionOpt)))
 }

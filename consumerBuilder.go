@@ -35,8 +35,7 @@ import (
 
 type (
 	consumerBuilder struct {
-		buildErrors *consumerBuildErrorList
-		topics      kafka.ConsumerTopicList
+		topics kafka.ConsumerTopicList
 
 		clusterToSaramaConsumer    map[string]consumer.SaramaConsumer
 		dlqClusterToSaramaProducer map[string]sarama.SyncProducer
@@ -48,31 +47,26 @@ type (
 		config       *kafka.ConsumerConfig
 		opts         *consumer.Options
 		saramaConfig *cluster.Config
+
+		buildErrors *consumerErrorList
+		buildOpts   consumerBuildOptions
 	}
 
-	consumerBuildErrorList struct {
-		errs []ConsumerBuildError
+	consumerErrorList struct {
+		errs []ConsumerError
 	}
 
-	// ConsumerBuildError is an error that encapsulates a Topic that could not be consumed
+	// ConsumerError is an error that encapsulates a Topic that could not be consumed
 	// due to some error.
-	ConsumerBuildError struct {
+	ConsumerError struct {
 		error
 		Topic kafka.ConsumerTopic
 	}
 )
 
-// HasConsumerBuildError can be used to test whether NewConsumer returned a consumer
-// consuming from a subset of requested topics.
-func HasConsumerBuildError(err error) []ConsumerBuildError {
-	be := err.(*consumerBuildErrorList)
-	return be.errs
-}
-
-func newConsumerBuilder(logger *zap.Logger, scope tally.Scope, config *kafka.ConsumerConfig, opts *consumer.Options) *consumerBuilder {
+func newConsumerBuilder(logger *zap.Logger, scope tally.Scope, config *kafka.ConsumerConfig, opts *consumer.Options, buildOpts consumerBuildOptions) *consumerBuilder {
 	saramaConfig := buildSaramaConfig(opts)
 	return &consumerBuilder{
-		buildErrors:                newConsumerBuildErrorList(),
 		topics:                     config.TopicList,
 		clusterToSaramaConsumer:    nil,
 		dlqClusterToSaramaProducer: nil,
@@ -83,6 +77,8 @@ func newConsumerBuilder(logger *zap.Logger, scope tally.Scope, config *kafka.Con
 		config:                     config,
 		opts:                       opts,
 		saramaConfig:               saramaConfig,
+		buildErrors:                newConsumerBuildErrorList(),
+		buildOpts:                  buildOpts,
 	}
 }
 
@@ -101,14 +97,18 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 		return nil, err
 	}
 
-	err = c.buildErrors.ToError()
+	c.buildOpts.addPartialConstructionError(c.buildErrors)
 
 	// if PartialConstruction is not enabled and there was an error during construction, don't return partial consumer.
-	if !c.opts.PartialConstruction && err != nil {
+	if !c.opts.PartialConstruction && c.buildErrors.ToError() != nil {
 		mc.Stop()
 		return nil, err
 	}
-	return mc, err
+
+	// Else, partial consumer is enabled so always return partial consumer with no error.
+	// Caller is responsible for checking for partial construction using
+	// the provided PartialConstructionError function.
+	return mc, nil
 }
 
 func (c *consumerBuilder) buildClusterConsumerMap(f func(string, string, *consumer.Options, kafka.ConsumerTopicList, chan kafka.Message, consumer.SaramaConsumer, map[string]consumer.DLQ, tally.Scope, *zap.Logger) (kafka.Consumer, error)) error {
@@ -275,23 +275,23 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	return config
 }
 
-func newConsumerBuildErrorList() *consumerBuildErrorList {
-	return &consumerBuildErrorList{
-		errs: make([]ConsumerBuildError, 0, 10),
+func newConsumerBuildErrorList() *consumerErrorList {
+	return &consumerErrorList{
+		errs: make([]ConsumerError, 0, 10),
 	}
 }
 
-func (c *consumerBuildErrorList) AddAll(topics kafka.ConsumerTopicList, err error) {
+func (c *consumerErrorList) AddAll(topics kafka.ConsumerTopicList, err error) {
 	for _, topic := range topics {
-		c.errs = append(c.errs, ConsumerBuildError{Topic: topic, error: err})
+		c.errs = append(c.errs, ConsumerError{Topic: topic, error: err})
 	}
 }
 
-func (c *consumerBuildErrorList) Add(topic kafka.ConsumerTopic, err error) {
-	c.errs = append(c.errs, ConsumerBuildError{Topic: topic, error: err})
+func (c *consumerErrorList) Add(topic kafka.ConsumerTopic, err error) {
+	c.errs = append(c.errs, ConsumerError{Topic: topic, error: err})
 }
 
-func (c *consumerBuildErrorList) Error() string {
+func (c *consumerErrorList) Error() string {
 	errStringsList := make([]string, 0, len(c.errs))
 	for _, err := range c.errs {
 		errStringsList = append(errStringsList, fmt.Sprintf("%s %s %s", err.Topic.Name, err.Topic.Cluster, err))
@@ -300,7 +300,7 @@ func (c *consumerBuildErrorList) Error() string {
 	return "failed to build consumer: " + strings.Join(errStringsList, ",")
 }
 
-func (c *consumerBuildErrorList) ToError() error {
+func (c *consumerErrorList) ToError() error {
 	if len(c.errs) == 0 {
 		return nil
 	}

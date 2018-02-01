@@ -65,7 +65,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 // being consumed by using the HasConsumerBuildError() function.
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error) {
 	opts := buildOptions(config, consumerOpts...)
-	b := newConsumerBuilder(c.logger, c.tally, config, opts)
+	b := newConsumerBuilder(c.logger, c.tally, config, opts, consumerOpts)
 	b.resolveBrokers(c.resolver)
 	b.buildSaramaProducerMap(c.saramaSyncProducerConstructor)
 	b.buildSaramaConsumerMap(c.saramaConsumerConstructor)

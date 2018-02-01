@@ -29,10 +29,26 @@ type (
 	ConsumerOption interface {
 		apply(*consumer.Options)
 	}
+
+	consumerBuildOptions []ConsumerOption
+
 	partialConstruction struct {
 		enabled bool
+		errs    *consumerErrorList
 	}
 )
+
+// PartialConstructionError returns a list of topics that could not be consumed as a list of ConsumerError.
+// PartialConstructionError should be called on the ConsumerOption returned by EnablePartitionConstruction.
+// This is useful if you chose to EnablePartialConstruction.
+func PartialConstructionError(option ConsumerOption) []ConsumerError {
+	pe, ok := option.(*partialConstruction)
+	if !ok {
+		return nil
+	}
+
+	return pe.errs.errs
+}
 
 // EnablePartialConstruction will set the client to return a partial consumer that
 // consumes from as many topics/clusters as it could and it may return an error that lists the
@@ -46,4 +62,13 @@ func EnablePartialConstruction() ConsumerOption {
 
 func (p *partialConstruction) apply(opt *consumer.Options) {
 	opt.PartialConstruction = p.enabled
+}
+
+func (c consumerBuildOptions) addPartialConstructionError(errs *consumerErrorList) {
+	for _, opt := range c {
+		pe, ok := opt.(*partialConstruction)
+		if ok {
+			pe.errs = errs
+		}
+	}
 }
