@@ -131,8 +131,8 @@ func (s *ConsumerBuilderTestSuite) TestBuildSaramaConsumer() {
 	s.saramaConsumerConstructor.errRet[""] = errors.New("error")
 	s.builder.buildSaramaConsumerMap(s.saramaConsumerConstructor.f)
 	s.Error(s.builder.buildErrors.ToError())
-	s.Equal(1, len(s.builder.saramaConsumerMap))
-	_, ok := s.builder.saramaConsumerMap["production-cluster"]
+	s.Equal(1, len(s.builder.clusterToSaramaConsumer))
+	_, ok := s.builder.clusterToSaramaConsumer["production-cluster"]
 	s.True(ok)
 }
 
@@ -140,8 +140,8 @@ func (s *ConsumerBuilderTestSuite) TestBuildSaramaProducerMap() {
 	s.saramaProducerConstructor.errRet[""] = errors.New("error")
 	s.builder.buildSaramaProducerMap(s.saramaProducerConstructor.f)
 	s.Error(s.builder.buildErrors.ToError())
-	s.Equal(1, len(s.builder.saramaProducerMap))
-	_, ok := s.builder.saramaProducerMap["dlq-cluster"]
+	s.Equal(1, len(s.builder.dlqClusterToSaramaProducer))
+	_, ok := s.builder.dlqClusterToSaramaProducer["dlq-cluster"]
 	s.True(ok)
 }
 

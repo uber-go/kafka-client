@@ -75,3 +75,10 @@ func (r *RunLifecycle) Stop(action func()) {
 		r.stopped = true
 	}
 }
+
+// Status returns the status of this lifecycle as a pair of booleans (started, stopped).
+func (r *RunLifecycle) Status() (bool, bool) {
+	r.Lock()
+	defer r.Unlock()
+	return r.started, r.stopped
+}

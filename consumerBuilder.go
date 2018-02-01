@@ -36,9 +36,9 @@ type (
 		buildErrors *consumerBuildErrorList
 		topics      kafka.ConsumerTopicList
 
-		saramaConsumerMap  map[string]consumer.SaramaConsumer
-		saramaProducerMap  map[string]sarama.SyncProducer
-		clusterConsumerMap map[string]kafka.Consumer
+		clusterToSaramaConsumer    map[string]consumer.SaramaConsumer
+		dlqClusterToSaramaProducer map[string]sarama.SyncProducer
+		clusterToConsumer          map[string]kafka.Consumer
 
 		msgCh        chan kafka.Message
 		logger       *zap.Logger
@@ -55,8 +55,8 @@ type (
 	// ConsumerBuildError is an error that encapsulates a Topic that could not be consumed
 	// due to some error.
 	ConsumerBuildError struct {
-		Topic kafka.ConsumerTopic
 		error
+		Topic kafka.ConsumerTopic
 	}
 )
 
@@ -70,17 +70,17 @@ func HasConsumerBuildError(err error) []ConsumerBuildError {
 func newConsumerBuilder(logger *zap.Logger, scope tally.Scope, config *kafka.ConsumerConfig, opts *consumer.Options) *consumerBuilder {
 	saramaConfig := buildSaramaConfig(opts)
 	return &consumerBuilder{
-		buildErrors:        newConsumerBuildErrorList(),
-		topics:             config.TopicList,
-		saramaConsumerMap:  nil,
-		saramaProducerMap:  nil,
-		clusterConsumerMap: nil,
-		msgCh:              make(chan kafka.Message, opts.RcvBufferSize),
-		logger:             logger,
-		scope:              scope,
-		config:             config,
-		opts:               opts,
-		saramaConfig:       saramaConfig,
+		buildErrors:                newConsumerBuildErrorList(),
+		topics:                     config.TopicList,
+		clusterToSaramaConsumer:    nil,
+		dlqClusterToSaramaProducer: nil,
+		clusterToConsumer:          nil,
+		msgCh:                      make(chan kafka.Message, opts.RcvBufferSize),
+		logger:                     logger,
+		scope:                      scope,
+		config:                     config,
+		opts:                       opts,
+		saramaConfig:               saramaConfig,
 	}
 }
 
@@ -88,9 +88,9 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 	mc, err := consumer.NewMultiClusterConsumer(
 		c.config,
 		c.topics,
-		c.clusterConsumerMap,
-		c.saramaConsumerMap,
-		c.saramaProducerMap,
+		c.clusterToConsumer,
+		c.clusterToSaramaConsumer,
+		c.dlqClusterToSaramaProducer,
 		c.msgCh,
 		c.scope,
 		c.logger,
@@ -98,7 +98,15 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mc, c.buildErrors.ToError()
+
+	err = c.buildErrors.ToError()
+
+	// if PartialConstruction is not enabled and there was an error during construction, don't return partial consumer.
+	if !c.opts.PartialConstruction && err != nil {
+		mc.Stop()
+		return nil, err
+	}
+	return mc, err
 }
 
 func (c *consumerBuilder) buildClusterConsumerMap(f func(string, string, *consumer.Options, kafka.ConsumerTopicList, chan kafka.Message, consumer.SaramaConsumer, map[string]consumer.DLQ, tally.Scope, *zap.Logger) (kafka.Consumer, error)) error {
@@ -107,14 +115,14 @@ func (c *consumerBuilder) buildClusterConsumerMap(f func(string, string, *consum
 
 	clusterTopicsMap := c.clusterTopicsMap()
 	for cluster, topicList := range clusterTopicsMap {
-		sc, ok := c.saramaConsumerMap[cluster]
+		sc, ok := c.clusterToSaramaConsumer[cluster]
 		if !ok {
 			return errors.New("clusterConsumer builder failed to find expected sarama consumer")
 		}
 
 		dlqMap := make(map[string]consumer.DLQ)
 		for _, topic := range topicList {
-			sp, ok := c.saramaProducerMap[topic.DLQ.Cluster]
+			sp, ok := c.dlqClusterToSaramaProducer[topic.DLQ.Cluster]
 			if !ok {
 				return errors.New("clusterConsumer builder failed to find expected sarama producer")
 			}
@@ -131,7 +139,7 @@ func (c *consumerBuilder) buildClusterConsumerMap(f func(string, string, *consum
 		outputTopicList = append(outputTopicList, topicList...)
 	}
 
-	c.clusterConsumerMap = clusterConsumerMap
+	c.clusterToConsumer = clusterConsumerMap
 	c.topics = outputTopicList
 	return nil
 }
@@ -153,7 +161,7 @@ func (c *consumerBuilder) buildSaramaProducerMap(f func([]string) (sarama.SyncPr
 	}
 
 	c.topics = outputTopicList
-	c.saramaProducerMap = saramaProducerMap
+	c.dlqClusterToSaramaProducer = saramaProducerMap
 }
 
 func (c *consumerBuilder) buildSaramaConsumerMap(f func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)) {
@@ -173,7 +181,7 @@ func (c *consumerBuilder) buildSaramaConsumerMap(f func([]string, string, []stri
 	}
 
 	c.topics = outputTopicList
-	c.saramaConsumerMap = saramaConsumerMap
+	c.clusterToSaramaConsumer = saramaConsumerMap
 }
 
 // resolveBrokers will attempt to resolve BrokerList for each topic in the inputTopicList.
@@ -232,7 +240,7 @@ func (c *consumerBuilder) clusterTopicsMap() map[string]kafka.ConsumerTopicList 
 	return clusterTopicMap
 }
 
-func buildOptions(config *kafka.ConsumerConfig) *consumer.Options {
+func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) *consumer.Options {
 	opts := consumer.DefaultOptions()
 	if config.Concurrency > 0 {
 		opts.Concurrency = config.Concurrency
@@ -241,6 +249,11 @@ func buildOptions(config *kafka.ConsumerConfig) *consumer.Options {
 	offsetPolicy := config.Offsets.Initial.Offset
 	if offsetPolicy == sarama.OffsetNewest || offsetPolicy == sarama.OffsetOldest {
 		opts.OffsetPolicy = config.Offsets.Initial.Offset
+	}
+
+	// Apply optional consumer parameters that may be passed in.
+	for _, cOpt := range consumerOpts {
+		cOpt.apply(opts)
 	}
 
 	return opts
