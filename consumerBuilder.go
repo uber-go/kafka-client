@@ -22,6 +22,8 @@ package kafkaclient
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
@@ -290,7 +292,12 @@ func (c *consumerBuildErrorList) Add(topic kafka.ConsumerTopic, err error) {
 }
 
 func (c *consumerBuildErrorList) Error() string {
-	return "Building NewConsumer has error"
+	errStringsList := make([]string, 0, len(c.errs))
+	for _, err := range c.errs {
+		errStringsList = append(errStringsList, fmt.Sprintf("%s %s %s", err.Topic.Name, err.Topic.Cluster, err))
+	}
+
+	return "failed to build consumer: " + strings.Join(errStringsList, ",")
 }
 
 func (c *consumerBuildErrorList) ToError() error {
