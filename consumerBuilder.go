@@ -24,13 +24,14 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
-	"github.com/uber-go/kafka-client/kafka"
+	"githubcom/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type (
 	consumerBuilder struct {
+		clusterTopicsMap         map[string]kafka.ConsumerTopicList
 		clusterSaramaClientMap   map[string]sarama.Client
 		clusterSaramaConsumerMap map[string]consumer.SaramaConsumer
 		clusterTopicConsumerMap  map[string]map[string]*consumer.TopicConsumer
@@ -59,6 +60,7 @@ func newConsumerBuilder(
 	consumerOptions := buildOptions(config, opts...)
 	saramaClusterConfig := buildSaramaConfig(consumerOptions)
 	return &consumerBuilder{
+		clusterTopicsMap:        make(map[string]kafka.ConsumerTopicList),
 		clusterSaramaClientMap:  make(map[string]sarama.Client),
 		clusterTopicConsumerMap: make(map[string]map[string]*consumer.TopicConsumer),
 		clusterConsumerMap:      make(map[string]*consumer.ClusterConsumer),
@@ -77,18 +79,22 @@ func newConsumerBuilder(
 		saramaClusterConfig: saramaClusterConfig,
 	}
 }
+
+func (c *consumerBuilder) addTopicToClusterTopicsMap(topic kafka.ConsumerTopic) {
+	topicList, ok := c.clusterTopicsMap[topic.Topic.Cluster]
+	if !ok {
+		topicList = make([]kafka.ConsumerTopic, 0, 10)
+	}
+	topicList = append(topicList, topic)
+	c.clusterTopicsMap[topic.Topic.Cluster] = topicList
+}
+
 func (c *consumerBuilder) build() (kafka.Consumer, error) {
 	// build TopicList per cluster
 	clusterTopicsMap := make(map[string]kafka.ConsumerTopicList)
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
-		topicList, ok := clusterTopicsMap[consumerTopic.Topic.Cluster]
-		if !ok {
-			topicList = make([]kafka.ConsumerTopic, 0, 10)
-		}
-		topicList = append(topicList, consumerTopic)
-		clusterTopicsMap[consumerTopic.Topic.Cluster] = topicList
-
-		// construct and make retry and dlq consumerTopics here
+		c.addTopicToClusterTopicsMap(consumerTopic)
+		c.addTopicToClusterTopicsMap(topicToRetryTopic(consumerTopic))
 	}
 
 	// build cluster consumer
@@ -101,17 +107,24 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 
 		// build topic consumers
 		for _, topic := range topicList {
+			retry, err := c.getOrAddDLQ(topic.Retry)
+			if err != nil {
+				c.close()
+				return nil, err
+			}
+
 			dlq, err := c.getOrAddDLQ(topic.DLQ)
 			if err != nil {
 				c.close()
 				return nil, err
 			}
 
+			retryDLQMultiplexer := consumer.NewRetryDLQMultiplexer(retry, dlq, topic.RetryCount)
 			topicConsumer := consumer.NewTopicConsumer(
 				topic.Name,
 				c.msgCh,
 				saramaConsumer,
-				dlq,
+				retryDLQMultiplexer,
 				c.options,
 				c.scope,
 				c.logger,
@@ -238,4 +251,13 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.Consumer.Offsets.Initial = options.OffsetPolicy
 	config.Consumer.MaxProcessingTime = options.MaxProcessingTime
 	return config
+}
+
+func topicToRetryTopic(topic kafka.ConsumerTopic) kafka.ConsumerTopic {
+	return kafka.ConsumerTopic{
+		Topic:      topic.Retry,
+		Retry:      topic.Retry,
+		DLQ:        topic.DLQ,
+		RetryCount: topic.RetryCount,
+	}
 }

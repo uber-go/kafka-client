@@ -29,9 +29,9 @@ import (
 type (
 	// Message is a wrapper around kafka consumer message
 	Message struct {
-		msg        *sarama.ConsumerMessage
-		retryCount int64
-		ctx        msgContext // consumer metadata, invisible to the application
+		msg      *sarama.ConsumerMessage
+		metadata DLQMetadata
+		ctx      msgContext // consumer metadata, invisible to the application
 	}
 	// context that gets piggybacked in the message
 	// will be used when the message is Acked/Nackd
@@ -42,8 +42,19 @@ type (
 	}
 )
 
+func newDLQMetadata() *DLQMetadata {
+	return &DLQMetadata{
+		RetryCount:  0,
+		Topic:       "",
+		Partition:   -1,
+		Offset:      -1,
+		TimestampNs: -1,
+		Data:        nil,
+	}
+}
+
 // newMessage builds a new Message object from the given kafka message
-func newMessage(scm *sarama.ConsumerMessage, ackID ackID, ackMgr *ackManager, dlq DLQ) *Message {
+func newMessage(scm *sarama.ConsumerMessage, ackID ackID, ackMgr *ackManager, dlq DLQ, metadata DLQMetadata) *Message {
 	return &Message{
 		msg: scm,
 		ctx: msgContext{
@@ -51,13 +62,18 @@ func newMessage(scm *sarama.ConsumerMessage, ackID ackID, ackMgr *ackManager, dl
 			ackMgr: ackMgr,
 			dlq:    dlq,
 		},
+		metadata: metadata,
 	}
 }
 
 // Key is a mutable reference to the message's key
 func (m *Message) Key() []byte {
 	result := make([]byte, len(m.msg.Key))
-	copy(result, m.msg.Key)
+	if m.metadata.Data != nil {
+		copy(result, m.metadata.Data)
+	} else {
+		copy(result, m.msg.Key)
+	}
 	return result
 }
 
@@ -70,27 +86,39 @@ func (m *Message) Value() []byte {
 
 // Topic is the topic from which the message was read
 func (m *Message) Topic() string {
+	if m.metadata.Topic != "" {
+		return m.metadata.Topic
+	}
 	return m.msg.Topic
 }
 
 // Partition is the ID of the partition from which the message was read
 func (m *Message) Partition() int32 {
+	if m.metadata.Partition != -1 {
+		return m.metadata.Partition
+	}
 	return m.msg.Partition
 }
 
 // Offset is the message's offset.
 func (m *Message) Offset() int64 {
+	if m.metadata.Offset != -1 {
+		return m.metadata.Offset
+	}
 	return m.msg.Offset
 }
 
 // Timestamp returns the timestamp for this message
 func (m *Message) Timestamp() time.Time {
+	if m.metadata.TimestampNs != -1 {
+		return time.Unix(0, m.metadata.TimestampNs)
+	}
 	return m.msg.Timestamp
 }
 
 // RetryCount returns the number of times this message has be retried.
 func (m *Message) RetryCount() int64 {
-	return m.retryCount
+	return m.metadata.RetryCount
 }
 
 // Ack acknowledges the message

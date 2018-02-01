@@ -29,6 +29,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
+	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/list"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
@@ -41,25 +42,27 @@ type (
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id           int32
-		topic        string
-		limit        int64
-		reachedLimit int32 // 0 = false, non-0 = true
-		msgCh        chan kafka.Message
-		ackMgr       *ackManager
-		sarama       SaramaConsumer
-		pConsumer    cluster.PartitionConsumer
-		dlq          DLQ
-		options      *Options
-		tally        tally.Scope
-		logger       *zap.Logger
-		stopC        chan struct{}
-		lifecycle    *util.RunLifecycle
+		id             int32
+		topic          string
+		decodeMetadata bool
+		limit          int64
+		reachedLimit   int32 // 0 = false, non-0 = true
+		msgCh          chan kafka.Message
+		ackMgr         *ackManager
+		sarama         SaramaConsumer
+		pConsumer      cluster.PartitionConsumer
+		dlq            DLQ
+		options        *Options
+		tally          tally.Scope
+		logger         *zap.Logger
+		stopC          chan struct{}
+		lifecycle      *util.RunLifecycle
 	}
 )
 
 // newPartitionConsumer returns a kafka consumer that can
 // read messages from a given [ topic, partition ] tuple
+// TODO (gteo): pass through should decode key
 func newPartitionConsumer(
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
@@ -183,11 +186,20 @@ func (p *partitionConsumer) markOffset() {
 
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
+	metadata := newDLQMetadata()
+	if p.decodeMetadata {
+		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
+			p.logger.Fatal("unable to marshal dlq metadata from message key", zap.Error(err))
+			return
+		}
+	}
+
 	ackID, err := p.trackOffset(scm.Offset)
 	if err != nil {
 		return
 	}
-	msg := newMessage(scm, ackID, p.ackMgr, p.dlq)
+
+	msg := newMessage(scm, ackID, p.ackMgr, p.dlq, *metadata)
 	select {
 	case p.msgCh <- msg:
 		return
