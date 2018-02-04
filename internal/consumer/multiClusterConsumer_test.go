@@ -106,10 +106,8 @@ func (s *MultiClusterConsumerTestSuite) TestStartConsumerCloseOnError() {
 
 	s.Error(s.consumer.Start())
 
-	started, stopped := cc1.lifecycle.Status()
+	_, stopped := cc1.lifecycle.Status()
 	s.True(stopped)
-	s.True(started)
-	started, stopped = cc2.lifecycle.Status()
+	_, stopped = cc2.lifecycle.Status()
 	s.True(stopped)
-	s.True(started)
 }
