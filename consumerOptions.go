@@ -48,7 +48,7 @@ func EnablePartialConsumption() ConsumerOption {
 }
 
 func (p *partialConsumption) apply(opt *consumer.Options) {
-	opt.PartialConstruction = p.enabled
+	opt.PartialConsumption = p.enabled
 }
 
 func (c consumerBuildOptions) addConsumerErrorList(errs *consumerErrorList) {
