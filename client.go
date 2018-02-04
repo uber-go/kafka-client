@@ -60,9 +60,9 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 
 // NewConsumer returns a new instance of kafka consumer.
 //
-// It is possible for NewConsumer to start a consumer which consumes from a subset of topics.
-// If partial construction has occurred, an error will be returned and you can get a list of topics that are not
-// being consumed by using the HasConsumerBuildError() function.
+// It is possible for NewConsumer to start a consumer which consumes from a subset of topics if EnablePartialConsumption,
+// ConsumerOption is used.
+// If partial consumption is enabled, error will not be returned.
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error) {
 	opts := buildOptions(config, consumerOpts...)
 	b := newConsumerBuilder(c.logger, c.tally, config, opts, consumerOpts)

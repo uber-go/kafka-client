@@ -106,8 +106,6 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 	}
 
 	// Else, partial consumer is enabled so always return partial consumer with no error.
-	// Caller is responsible for checking for partial construction using
-	// the provided PartialConstructionError function.
 	return mc, nil
 }
 

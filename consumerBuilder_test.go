@@ -155,11 +155,11 @@ func (s *ConsumerBuilderTestSuite) TestBuildClusterConsumerMap() {
 }
 
 func (s *ConsumerBuilderTestSuite) TestBuild() {
-	// no construction error and partial construction disabled
+	// no construction error and partial consumer disabled
 	_, err := s.builder.build()
 	s.NoError(err)
 
-	// construction error and partial construction enabled
+	// construction error and partial consumer enabled
 	partialConstructionOpt := EnablePartialConsumption()
 	s.builder.buildErrors = &consumerErrorList{
 		errs: []ConsumerError{{Topic: kafka.ConsumerTopic{}, error: errors.New("error")}},
