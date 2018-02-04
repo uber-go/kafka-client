@@ -97,10 +97,10 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 		return nil, err
 	}
 
-	c.buildOpts.addPartialConstructionError(c.buildErrors)
+	c.buildOpts.addConsumerErrorList(c.buildErrors)
 
-	// if PartialConstruction is not enabled and there was an error during construction, don't return partial consumer.
-	if !c.opts.PartialConstruction && c.buildErrors.ToError() != nil {
+	// if PartialConsumption is not enabled and there was an error during construction, don't return partial consumer.
+	if !c.opts.PartialConsumption && c.buildErrors.ToError() != nil {
 		mc.Stop()
 		return nil, err
 	}

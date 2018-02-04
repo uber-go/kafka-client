@@ -160,7 +160,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 	s.NoError(err)
 
 	// construction error and partial construction enabled
-	partialConstructionOpt := EnablePartialConstruction()
+	partialConstructionOpt := EnablePartialConsumption()
 	s.builder.buildErrors = &consumerErrorList{
 		errs: []ConsumerError{{Topic: kafka.ConsumerTopic{}, error: errors.New("error")}},
 	}
@@ -168,5 +168,8 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 	s.builder.buildOpts = buildOpts
 	_, err = s.builder.build()
 	s.NoError(err)
-	s.Equal(1, len(PartialConstructionError(partialConstructionOpt)))
+
+	pc, ok := partialConstructionOpt.(*partialConsumption)
+	s.True(ok)
+	s.Equal(1, len(pc.errs.errs))
 }

@@ -32,41 +32,28 @@ type (
 
 	consumerBuildOptions []ConsumerOption
 
-	partialConstruction struct {
+	partialConsumption struct {
 		enabled bool
 		errs    *consumerErrorList
 	}
 )
 
-// PartialConstructionError returns a list of topics that could not be consumed as a list of ConsumerError.
-// PartialConstructionError should be called on the ConsumerOption returned by EnablePartitionConstruction.
-// This is useful if you chose to EnablePartialConstruction.
-func PartialConstructionError(option ConsumerOption) []ConsumerError {
-	pe, ok := option.(*partialConstruction)
-	if !ok {
-		return nil
-	}
-
-	return pe.errs.errs
-}
-
-// EnablePartialConstruction will set the client to return a partial consumer that
+// EnablePartialConsumption will set the client to return a partial consumer that
 // consumes from as many topics/clusters as it could and it may return an error that lists the
 // topics that failed to connect to their cluster.
-// You can use ConsumerBuildError(err error) to most information about the failed topics, if any.
-func EnablePartialConstruction() ConsumerOption {
-	return &partialConstruction{
+func EnablePartialConsumption() ConsumerOption {
+	return &partialConsumption{
 		enabled: true,
 	}
 }
 
-func (p *partialConstruction) apply(opt *consumer.Options) {
+func (p *partialConsumption) apply(opt *consumer.Options) {
 	opt.PartialConstruction = p.enabled
 }
 
-func (c consumerBuildOptions) addPartialConstructionError(errs *consumerErrorList) {
+func (c consumerBuildOptions) addConsumerErrorList(errs *consumerErrorList) {
 	for _, opt := range c {
-		pe, ok := opt.(*partialConstruction)
+		pe, ok := opt.(*partialConsumption)
 		if ok {
 			pe.errs = errs
 		}
