@@ -36,7 +36,7 @@ import (
 )
 
 type (
-	ConsumerTestSuite struct {
+	ClusterConsumerTestSuite struct {
 		suite.Suite
 		consumer       *clusterConsumer
 		saramaConsumer *mockSaramaConsumer
@@ -45,27 +45,30 @@ type (
 		dlqTopic       string
 		options        *Options
 		logger         *zap.Logger
-		limits         topicPartitionLimitMap
+		limits         TopicPartitionLimitMap
 	}
 )
 
-var testConsumerOptions = Options{
-	Concurrency:            4,
-	RcvBufferSize:          4,
-	PartitionRcvBufferSize: 2,
-	OffsetCommitInterval:   25 * time.Millisecond,
-	RebalanceDwellTime:     time.Second,
-	MaxProcessingTime:      5 * time.Millisecond,
-	OffsetPolicy:           sarama.OffsetOldest,
+func testConsumerOptions() *Options {
+	return &Options{
+		Concurrency:            4,
+		RcvBufferSize:          4,
+		PartitionRcvBufferSize: 2,
+		OffsetCommitInterval:   25 * time.Millisecond,
+		RebalanceDwellTime:     time.Second,
+		MaxProcessingTime:      5 * time.Millisecond,
+		OffsetPolicy:           sarama.OffsetOldest,
+		Limits:                 NewTopicPartitionLimitMap(nil),
+	}
 }
 
 var _ kafka.Consumer = (*clusterConsumer)(nil)
 
-func TestConsumerTestSuite(t *testing.T) {
-	suite.Run(t, new(ConsumerTestSuite))
+func TestClusterConsumerTestSuite(t *testing.T) {
+	suite.Run(t, new(ClusterConsumerTestSuite))
 }
 
-func (s *ConsumerTestSuite) SetupTest() {
+func (s *ClusterConsumerTestSuite) SetupTest() {
 	topic := kafka.ConsumerTopic{
 		Topic: kafka.Topic{
 			Name:       "unit-test",
@@ -85,8 +88,8 @@ func (s *ConsumerTestSuite) SetupTest() {
 		GroupName:   "unit-test-cg",
 		Concurrency: 4,
 	}
-	s.options = &testConsumerOptions
-	s.limits = newTopicLimitMap(nil)
+	s.options = testConsumerOptions()
+	s.limits = NewTopicPartitionLimitMap(nil)
 	s.logger = zap.NewNop()
 	s.dlqProducer = newMockDLQProducer()
 	s.saramaConsumer = newMockSaramaConsumer()
@@ -99,14 +102,14 @@ func (s *ConsumerTestSuite) SetupTest() {
 	s.NoError(err)
 }
 
-func (s *ConsumerTestSuite) TearDownTest() {
+func (s *ClusterConsumerTestSuite) TearDownTest() {
 	s.consumer.Stop()
 	<-s.consumer.Closed()
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.isClosed() }, time.Second))
 	s.True(s.dlqProducer.isClosed())
 }
 
-func (s *ConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
+func (s *ClusterConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	msgCh := s.consumer.Messages()
 	for i := 0; i < concurrency; i++ {
@@ -126,7 +129,7 @@ func (s *ConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *
 	return &wg
 }
 
-func (s *ConsumerTestSuite) TestWithOnePartition() {
+func (s *ClusterConsumerTestSuite) TestWithOnePartition() {
 	s.consumer.Start()
 	workerWG := s.startWorker(100, 4, false)
 
@@ -156,7 +159,7 @@ func (s *ConsumerTestSuite) TestWithOnePartition() {
 	s.True(util.AwaitCondition(func() bool { return p1.isClosed() }, time.Second))
 }
 
-func (s *ConsumerTestSuite) TestWithManyPartitions() {
+func (s *ClusterConsumerTestSuite) TestWithManyPartitions() {
 	nPartitions := 8
 	s.consumer.Start()
 	workerWG := s.startWorker(nPartitions*100, 4, false)
@@ -183,7 +186,7 @@ func (s *ConsumerTestSuite) TestWithManyPartitions() {
 	s.Equal(0, s.dlqProducer.backlog())
 }
 
-func (s *ConsumerTestSuite) TestPartitionRebalance() {
+func (s *ClusterConsumerTestSuite) TestPartitionRebalance() {
 	nPartitions := 4
 	nRebalances := 3
 	s.consumer.Start()
@@ -208,7 +211,7 @@ func (s *ConsumerTestSuite) TestPartitionRebalance() {
 	s.Equal(0, s.dlqProducer.backlog())
 }
 
-func (s *ConsumerTestSuite) TestDuplicates() {
+func (s *ClusterConsumerTestSuite) TestDuplicates() {
 	s.consumer.Start()
 	workerWG := s.startWorker(100, 1, false)
 	pc := newMockPartitionedConsumer(s.topic, 1, 0, s.options.PartitionRcvBufferSize)
@@ -223,7 +226,7 @@ func (s *ConsumerTestSuite) TestDuplicates() {
 	s.Equal(0, s.dlqProducer.backlog())
 }
 
-func (s *ConsumerTestSuite) TestDLQ() {
+func (s *ClusterConsumerTestSuite) TestDLQ() {
 	nPartitions := 4
 	s.consumer.Start()
 	workerWG := s.startWorker(nPartitions*100, 4, true)
@@ -244,10 +247,10 @@ func (s *ConsumerTestSuite) TestDLQ() {
 	s.Equal(nPartitions*100, s.dlqProducer.backlog())
 }
 
-func (s *ConsumerTestSuite) TestConsumerWithLimit() {
+func (s *ClusterConsumerTestSuite) TestConsumerWithLimit() {
 	// partition 0 will receive 1 message
 	// partition 1 will receive 0 messages
-	limits := newTopicLimitMap(map[TopicPartition]int64{
+	limits := NewTopicPartitionLimitMap(map[TopicPartition]int64{
 		{Topic: s.topic, Partition: 0}: 1,
 	})
 	limits.checkInterval = time.Millisecond

@@ -28,9 +28,22 @@ import (
 
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
+	"github.com/uber-go/kafka-client/internal/util"
+	"github.com/uber-go/kafka-client/kafka"
+	"go.uber.org/zap"
 )
 
 type (
+	mockConsumer struct {
+		sync.Mutex
+		name      string
+		topics    []string
+		startErr  error
+		msgC      chan kafka.Message
+		doneC     chan struct{}
+		lifecycle *util.RunLifecycle
+	}
+
 	mockSaramaConsumer struct {
 		sync.Mutex
 		closed     int64
@@ -54,6 +67,54 @@ type (
 		keys   map[string]struct{}
 	}
 )
+
+func newMockConsumer(name string, topics []string, msgC chan kafka.Message) *mockConsumer {
+	return &mockConsumer{
+		name:      name,
+		topics:    topics,
+		msgC:      msgC,
+		doneC:     make(chan struct{}),
+		lifecycle: util.NewRunLifecycle("mockConsumer-"+name, zap.L()),
+	}
+}
+
+// Name returns the id for this mockConsumer.
+func (c *mockConsumer) Name() string {
+	c.Lock()
+	defer c.Unlock()
+	return c.name
+}
+
+// Topics returns the list of topics this mock consumer was assigned to consumer.
+func (c *mockConsumer) Topics() []string {
+	c.Lock()
+	defer c.Unlock()
+	return c.topics
+}
+
+// Start will start the mockConsumer on the initialized lifecycle and return startErr.
+func (c *mockConsumer) Start() error {
+	return c.lifecycle.Start(func() error {
+		return c.startErr
+	})
+}
+
+// Stop will stop the lifecycle.
+func (c *mockConsumer) Stop() {
+	c.lifecycle.Stop(func() {
+		close(c.doneC)
+	})
+}
+
+// Closed will return a channel that can be used to check if the consumer has been stopped.
+func (c *mockConsumer) Closed() <-chan struct{} {
+	return c.doneC
+}
+
+// Messages return the message channel.
+func (c *mockConsumer) Messages() <-chan kafka.Message {
+	return c.msgC
+}
 
 func newMockPartitionedConsumer(topic string, id int32, beginOffset int64, rcvBufSize int) *mockPartitionedConsumer {
 	return &mockPartitionedConsumer{

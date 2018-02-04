@@ -114,3 +114,11 @@ func (c Topic) HashKey() string {
 	output := c.Name + c.Cluster
 	return output
 }
+
+// DLQEnabled returns true if DLQ.Name and DLQ.Cluster are not empty.
+func (c ConsumerTopic) DLQEnabled() bool {
+	if c.DLQ.Cluster != "" && c.DLQ.Name != "" {
+		return true
+	}
+	return false
+}
