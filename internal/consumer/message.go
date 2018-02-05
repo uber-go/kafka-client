@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"go.uber.org/zap/zapcore"
 )
 
 type (
@@ -135,7 +136,29 @@ func (m *Message) Ack() error {
 // will *block* until enqueue to the dlq succeeds
 func (m *Message) Nack() error {
 	ctx := &m.ctx
-	ctx.dlq.Add(m)
+	if err := ctx.dlq.Add(m); err != nil {
+		return err
+	}
 	ctx.ackMgr.Nack(ctx.ackID)
+	return nil
+}
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (m *Message) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("topic", m.Topic())
+	e.AddInt32("partition", m.Partition())
+	e.AddInt64("offset", m.Offset())
+	e.AddTime("timestamp", m.Timestamp())
+	e.AddInt64("retryCount", m.RetryCount())
+
+	if m.metadata.RetryCount != 0 {
+		e.AddObject("underlyingMsg", zapcore.ObjectMarshalerFunc(func(ee zapcore.ObjectEncoder) error {
+			ee.AddString("topic", m.msg.Topic)
+			ee.AddInt32("partition", m.msg.Partition)
+			ee.AddInt64("offset", m.msg.Offset)
+			ee.AddTime("timestamp", m.msg.Timestamp)
+			return nil
+		}))
+	}
 	return nil
 }

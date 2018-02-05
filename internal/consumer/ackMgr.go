@@ -23,6 +23,7 @@ package consumer
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/uber-go/kafka-client/internal/list"
 	"github.com/uber-go/kafka-client/internal/metrics"
@@ -116,7 +117,6 @@ func (mgr *ackManager) Ack(id ackID) {
 func (mgr *ackManager) Nack(id ackID) {
 	mgr.Ack(id)
 	mgr.tally.Counter(metrics.KafkaPartitionNacks)
-	mgr.logger.Error("ackmgr received nack", zap.Int64("seq", id.msgSeq))
 }
 
 // CommitLevel returns the seqNum that can be
@@ -131,6 +131,10 @@ func (mgr *ackManager) CommitLevel() int64 {
 		return mgr.unackedSeqList.LastValue()
 	}
 	return unacked - 1
+}
+
+func (mgr *ackManager) Reset() <-chan struct{} {
+	return mgr.unackedSeqList.Reset()
 }
 
 // newAckID returns a an ackID with the given params
@@ -194,4 +198,25 @@ func (l *threadSafeSortedList) Add(value int64) (list.Address, error) {
 		l.lastValue = value
 	}
 	return addr, err
+}
+
+func (l *threadSafeSortedList) Reset() <-chan struct{} {
+	doneC := make(chan struct{})
+	checkInterval := time.NewTicker(time.Millisecond)
+	go func() {
+		for {
+			select {
+			case <-checkInterval.C:
+				l.Lock()
+				if l.list.Empty() {
+					l.lastValue = -1
+					close(doneC)
+				}
+				l.Unlock()
+			case <-doneC:
+				return
+			}
+		}
+	}()
+	return doneC
 }

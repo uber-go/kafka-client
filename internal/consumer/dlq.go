@@ -34,6 +34,7 @@ import (
 
 var (
 	errShutdown = errors.New("error consumer shutdown")
+	errNoDLQ = errors.New("no persistent dlq configured")
 )
 
 type (
@@ -71,8 +72,7 @@ type (
 	// bufferedErrorTopic internally batches messages, so calls to Add may block until the internal
 	// buffer is flushed and a batch of messages is send to the cluster.
 	bufferedErrorTopic struct {
-		topic    string
-		cluster  string
+		topic    kafka.Topic
 		producer sarama.AsyncProducer
 
 		stopC chan struct{}
@@ -82,33 +82,31 @@ type (
 		logger    *zap.Logger
 		lifecycle *util.RunLifecycle
 	}
+
+	noopDLQ struct {}
 )
 
-// NewDLQ returns a DLQ writer for writing to a specific DLQ topic
-func NewDLQ(topic, cluster string, client sarama.Client, scope tally.Scope, logger *zap.Logger) (DLQ, error) {
-	asyncProducer, err := sarama.NewAsyncProducerFromClient(client)
-	if err != nil {
-		return nil, err
-	}
-	return newBufferedDLQ(topic, cluster, asyncProducer, scope, logger), nil
+// NewBufferedDLQ returns a DLQ that is backed by a buffered async sarama producer.
+func NewBufferedDLQ(topic kafka.Topic, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
+	return newBufferedDLQ(topic, producer, scope, logger.With(zap.String("topic", topic.Name), zap.String("cluster", topic.Cluster)))
 }
 
-func newBufferedDLQ(topic, cluster string, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
+func newBufferedDLQ(topic kafka.Topic, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
 	return &bufferedErrorTopic{
 		topic:     topic,
-		cluster:   cluster,
 		producer:  producer,
 		stopC:     make(chan struct{}),
 		doneC:     make(chan struct{}),
 		scope:     scope,
 		logger:    logger,
-		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster)),
+		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic.Name, topic.Cluster)),
 	}
 }
 
 func (d *bufferedErrorTopic) Start() error {
 	return d.lifecycle.Start(func() error {
 		go d.asyncProducerResponseLoop()
+		d.logger.Info("DLQ started")
 		return nil
 	})
 }
@@ -118,6 +116,7 @@ func (d *bufferedErrorTopic) Stop() {
 		close(d.stopC)
 		d.producer.Close()
 		<-d.doneC
+		d.logger.Info("DLQ stopped")
 	})
 }
 
@@ -163,7 +162,7 @@ func (d *bufferedErrorTopic) asyncProducerResponseLoop() {
 			}
 			responseC, ok := msg.Metadata.(chan error)
 			if !ok {
-				d.logger.Error("fail to convert sarama ProducerMessage metadata to ")
+				d.logger.Error("DLQ failed to decode metadata protobuf")
 				continue
 			}
 			responseC <- nil
@@ -190,7 +189,7 @@ func (d *bufferedErrorTopic) shutdown() {
 
 func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan error) *sarama.ProducerMessage {
 	return &sarama.ProducerMessage{
-		Topic:    d.topic,
+		Topic:    d.topic.Name,
 		Key:      sarama.ByteEncoder(key),
 		Value:    sarama.ByteEncoder(value),
 		Metadata: responseC,
@@ -240,3 +239,22 @@ func (d *dlqMultiplexer) Stop() {
 	d.dlqTopic.Stop()
 	d.retryTopic.Stop()
 }
+
+// NewNoopDLQ returns returns a noop DLQ.
+func NewNoopDLQ() DLQ {
+	return noopDLQ{}
+}
+
+// Start does nothing.
+func (d noopDLQ) Start() error {
+	return nil
+}
+
+// Stop does nothing.
+func (d noopDLQ) Stop() {}
+
+// Add returns errNoDLQ because there is no kafka topic backing it.
+func (d noopDLQ) Add(m kafka.Message) error {
+	return errNoDLQ
+}
+

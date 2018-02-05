@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -43,9 +44,11 @@ func TestDLQTestSuite(t *testing.T) {
 
 func (s *DLQTestSuite) SetupTest() {
 	s.saramaProducer = newMockSaramaProducer()
+	topic := new(kafka.Topic)
+	topic.Name = "topic"
+	topic.Cluster = "cluster"
 	s.dlq = newBufferedDLQ(
-		"topic",
-		"cluster",
+		*topic,
 		s.saramaProducer,
 		tally.NoopScope,
 		zap.NewNop(),

@@ -85,7 +85,7 @@ func (s *ClusterConsumerTestSuite) SetupTest() {
 	s.msgCh = make(chan kafka.Message, 10)
 	s.saramaConsumer = newMockSaramaConsumer()
 	s.dlqProducer = newMockDLQProducer()
-	s.topicConsumer = NewTopicConsumer(Topic{topic, TopicTypeDefaultQ}, s.msgCh, s.saramaConsumer, s.dlqProducer, s.options, tally.NoopScope, s.logger)
+	s.topicConsumer = NewTopicConsumer(Topic{ConsumerTopic: topic, TopicType: TopicTypeDefaultQ, PartitionConsumerFactory: NewPartitionConsumer}, s.msgCh, s.saramaConsumer, s.dlqProducer, s.options, tally.NoopScope, s.logger)
 	s.consumer = NewClusterConsumer(topic.Cluster, s.saramaConsumer, map[string]*TopicConsumer{s.topic: s.topicConsumer}, tally.NoopScope, s.logger)
 }
 
@@ -136,7 +136,8 @@ func (s *ClusterConsumerTestSuite) TestWithOnePartition() {
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(1) == int64(100) }, time.Second))
 	s.Equal(0, s.dlqProducer.backlog())
 
-	cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1]
+	cp, ok := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1].(*partitionConsumer)
+	s.True(ok)
 	s.Equal(int64(100), s.saramaConsumer.offset(1), "wrong commit offset")
 	s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 
@@ -165,7 +166,8 @@ func (s *ClusterConsumerTestSuite) TestWithManyPartitions() {
 	s.Equal(0, len(s.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1]
+		cp, ok := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1].(*partitionConsumer)
+		s.True(ok)
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}
@@ -226,7 +228,8 @@ func (s *ClusterConsumerTestSuite) TestDLQ() {
 	s.Equal(0, len(s.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[int32(i)]
+		cp, ok := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[int32(i)].(*partitionConsumer)
+		s.True(ok)
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}

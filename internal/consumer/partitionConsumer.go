@@ -21,6 +21,7 @@
 package consumer
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -35,34 +36,91 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type (
-	// partitionConsumer is the consumer for a specific
+	topicPartition struct {
+		partition int32
+		Topic
+	}
+
+	// PartitionConsumerFactory is a factory method for returning PartitionConsumer.
+	// NewPartitionConsumer returns an unbounded partition consumer.
+	// NewRangePartitionConsumer returns a range partition consumer.
+	PartitionConsumerFactory func(
+		topic Topic,
+		sarama SaramaConsumer,
+		pConsumer cluster.PartitionConsumer,
+		options *Options,
+		msgCh chan kafka.Message,
+		dlq DLQ,
+		scope tally.Scope,
+		logger *zap.Logger) PartitionConsumer
+
+	// PartitionConsumer is the consumer for a specific
 	// kafka partition
+	PartitionConsumer interface {
+		Start() error
+		Stop()
+		Drain(time.Duration)
+		ResetOffset(kafka.OffsetRange) error
+	}
+
 	partitionConsumer struct {
-		TopicType
-		id        int32
-		topic     string
-		msgCh     chan kafka.Message
-		ackMgr    *ackManager
-		sarama    SaramaConsumer
-		pConsumer cluster.PartitionConsumer
-		dlq       DLQ
-		options   *Options
-		tally     tally.Scope
-		logger    *zap.Logger
-		stopC     chan struct{}
-		lifecycle *util.RunLifecycle
+		topicPartition topicPartition
+		msgCh          chan kafka.Message
+		ackMgr         *ackManager
+		sarama         SaramaConsumer
+		pConsumer      cluster.PartitionConsumer
+		dlq            DLQ
+		options        *Options
+		tally          tally.Scope
+		logger         *zap.Logger
+		stopC          chan struct{}
+		lifecycle      *util.RunLifecycle
+	}
+
+	rangePartitionConsumer struct {
+		partitionConsumer
+		offsetRange  *kafka.OffsetRange
+		offsetRangeC chan kafka.OffsetRange
 	}
 )
 
-// newPartitionConsumer returns a kafka consumer that can
+func (t topicPartition) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	t.Topic.MarshalLogObject(e)
+	e.AddInt32("partition", t.partition)
+	return nil
+}
+
+// NewPartitionConsumer returns a kafka consumer that can
 // read messages from a given [ topic, partition ] tuple
-func newPartitionConsumer(
+func NewPartitionConsumer(
+	topic Topic,
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
-	topicType TopicType,
+	options *Options,
+	msgCh chan kafka.Message,
+	dlq DLQ,
+	scope tally.Scope,
+	logger *zap.Logger) PartitionConsumer {
+	return newPartitionConsumer(
+		topic,
+		sarama,
+		pConsumer,
+		options,
+		msgCh,
+		dlq,
+		scope,
+		logger,
+	)
+}
+
+func newPartitionConsumer(
+	topic Topic,
+	sarama SaramaConsumer,
+	pConsumer cluster.PartitionConsumer,
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
@@ -71,28 +129,61 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:        pConsumer.Partition(),
-		topic:     pConsumer.Topic(),
-		TopicType: topicType,
+		topicPartition: topicPartition{
+			partition: pConsumer.Partition(),
+			Topic:     topic,
+		},
 		sarama:    sarama,
 		pConsumer: pConsumer,
 		options:   options,
 		msgCh:     msgCh,
 		dlq:       dlq,
 		tally:     scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:    logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		logger:    logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
 		stopC:     make(chan struct{}),
 		ackMgr:    newAckManager(maxUnAcked, scope, logger),
 		lifecycle: util.NewRunLifecycle(name),
 	}
 }
 
+// NewRangePartitionConsumer returns a kafka consumer that can
+// read messages from a given [ topic, partition ] tuple
+func NewRangePartitionConsumer(
+	topic Topic,
+	sarama SaramaConsumer,
+	pConsumer cluster.PartitionConsumer,
+	options *Options,
+	msgCh chan kafka.Message,
+	dlq DLQ,
+	scope tally.Scope,
+	logger *zap.Logger) PartitionConsumer {
+	return newRangePartitionConsumer(newPartitionConsumer(
+		topic,
+		sarama,
+		pConsumer,
+		options,
+		msgCh,
+		dlq,
+		scope,
+		logger,
+	))
+}
+
+func newRangePartitionConsumer(consumer *partitionConsumer) *rangePartitionConsumer {
+	return &rangePartitionConsumer{
+		partitionConsumer: *consumer,
+		offsetRange:       nil,
+		offsetRangeC:      make(chan kafka.OffsetRange),
+	}
+}
+
 // Start starts the consumer
 func (p *partitionConsumer) Start() error {
 	return p.lifecycle.Start(func() error {
-		go p.messageLoop()
+		go p.messageLoop(nil)
 		go p.commitLoop()
 		p.tally.Counter(metrics.KafkaPartitionStarted).Inc(1)
+		p.logger.Info("partition consumer started", zap.Object("topicPartition", p.topicPartition))
 		return nil
 	})
 }
@@ -112,26 +203,49 @@ func (p *partitionConsumer) Drain(d time.Duration) {
 	p.stop(d)
 }
 
+func (p *partitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) error {
+	if offsetRange.HighOffset != -1 {
+		p.logger.Warn("partition consumer unable to set highwatermark")
+	}
+	p.sarama.ResetPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, offsetRange.LowOffset, "")
+	return nil
+}
+
 // messageLoop is the message read loop for this consumer
 // TODO (venkat): maintain a pre-allocated pool of Messages
-func (p *partitionConsumer) messageLoop() {
-	p.logger.Info("partition consumer started")
+func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
+	var drain bool
+	if offsetRange != nil {
+		drain = true
+	}
+	p.logger.Info("partition consumer message loop started")
 	for {
 		select {
 		case m, ok := <-p.pConsumer.Messages():
 			if !ok {
-				p.logger.Info("partition message channel closed")
+				p.logger.Info("partition consumer message channel closed")
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
+
+			if drain && m.Offset != offsetRange.LowOffset {
+				p.logger.Debug("partition consumer drain message", zap.Object("offetRange", offsetRange), zap.Int64("offset", m.Offset))
+				continue
+			}
+			drain = false
 
 			lag := time.Now().Sub(m.Timestamp)
 			p.tally.Gauge(metrics.KafkaPartitionLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
 			p.tally.Counter(metrics.KafkaPartitionMessagesIn).Inc(1)
 			p.deliver(m)
+
+			if offsetRange != nil && m.Offset >= offsetRange.HighOffset {
+				p.logger.Info("partition consumer message loop reached range", zap.Object("offsetRange", offsetRange))
+				return
+			}
 		case <-p.stopC:
-			p.logger.Info("partition consumer stopped")
+			p.logger.Info("partition consumer message loop stopped")
 			return
 		}
 	}
@@ -140,6 +254,7 @@ func (p *partitionConsumer) messageLoop() {
 // commitLoop periodically checkpoints the offsets with broker
 func (p *partitionConsumer) commitLoop() {
 	ticker := time.NewTicker(p.options.MaxProcessingTime)
+	p.logger.Info("partition consumer commit loop started")
 	defer ticker.Stop()
 	for {
 		select {
@@ -147,6 +262,7 @@ func (p *partitionConsumer) commitLoop() {
 			p.markOffset()
 		case <-p.stopC:
 			p.markOffset()
+			p.logger.Info("partition consumer commit loop stopped")
 			return
 		}
 	}
@@ -156,20 +272,20 @@ func (p *partitionConsumer) commitLoop() {
 func (p *partitionConsumer) markOffset() {
 	latestOff := p.ackMgr.CommitLevel()
 	if latestOff >= 0 {
-		p.sarama.MarkPartitionOffset(p.topic, p.id, latestOff, "")
+		p.sarama.MarkPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, latestOff, "")
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionBacklog).Update(backlog)
-		p.logger.Debug("kafka checkpoint", zap.Int64("offset", latestOff))
+		p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
 
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 	metadata := newDLQMetadata()
-	if p.TopicType == TopicTypeRetryQ || p.TopicType == TopicTypeDLQ {
+	if p.topicPartition.TopicType == TopicTypeRetryQ || p.topicPartition.TopicType == TopicTypeDLQ {
 		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
-			p.logger.Fatal("unable to marshal dlq metadata from message key", zap.Error(err))
+			p.logger.Fatal("partition consumer unable to marshal dlq metadata from message key", zap.Error(err))
 			return
 		}
 	}
@@ -197,7 +313,7 @@ func (p *partitionConsumer) trackOffset(offset int64) (ackID, error) {
 				return ackID{}, err
 			}
 			p.tally.Counter(metrics.KafkaPartitionAckMgrListFull).Inc(1)
-			p.logger.Error("ackMgr list ran out of capacity")
+			p.logger.Warn("partition consumer ackMgr list ran out of capacity")
 			// list can never be out of capacity if maxOutstanding
 			// is configured correctly for ackMgr, but if not, we have no
 			// option but to spin in this case
@@ -217,6 +333,7 @@ func (p *partitionConsumer) stop(d time.Duration) {
 		p.markOffset()
 		p.pConsumer.Close()
 		p.tally.Counter(metrics.KafkaPartitionStopped).Inc(1)
+		p.logger.Info("partition consumer stopped", zap.Object("topicPartition", p.topicPartition))
 	})
 }
 
@@ -227,4 +344,48 @@ func (p *partitionConsumer) sleep(d time.Duration) bool {
 	case <-p.stopC:
 		return true
 	}
+}
+
+func (p *rangePartitionConsumer) Start() error {
+	return p.lifecycle.Start(func() error {
+		go p.offsetLoop()
+		go p.commitLoop()
+		p.tally.Counter(metrics.KafkaPartitionStarted).Inc(1)
+		p.logger.Info("range partition consumer started", zap.Object("topicPartition", p.topicPartition))
+		return nil
+	})
+}
+
+func (p *rangePartitionConsumer) offsetLoop() {
+	p.logger.Info("range partition consumer offset loop started", zap.Object("topicPartition", p.topicPartition))
+	for {
+		select {
+		case ntf, ok := <-p.offsetRangeC:
+			p.logger.Debug("range partition consumer received offset range", zap.Object("topicPartition", p.topicPartition), zap.Object("offsetRange", ntf))
+			if !ok {
+				p.logger.Info("range partition consumer offset range channel closed")
+				p.Drain(p.options.MaxProcessingTime)
+				return
+			}
+			p.logger.Debug("range partition consumer ack mgr reset started", zap.Object("offsetRange", ntf))
+			<-p.ackMgr.Reset()
+			p.sarama.ResetPartitionOffset(p.topicPartition.Name, p.topicPartition.partition, ntf.LowOffset-1, "")
+			p.logger.Debug("range partition consumer ack mgr reset completed", zap.Object("offsetRange", ntf))
+			p.messageLoop(&ntf)
+			p.logger.Debug("range partition consumer message loop completed", zap.Object("offsetRange", ntf))
+		case <-p.stopC:
+			p.logger.Info("range partition consumer offset loop stopped", zap.Object("topicPartition", p.topicPartition))
+			return
+		}
+	}
+}
+
+// ResetOffset will reset the consumer offset for the specified partition.
+func (p *rangePartitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) error {
+	if offsetRange.HighOffset == -1 {
+		return errors.New("rangePartitionConsumer expects a highwatermark when resetting offset")
+	}
+
+	p.offsetRangeC <- offsetRange
+	return nil
 }

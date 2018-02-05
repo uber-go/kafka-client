@@ -30,6 +30,7 @@ import (
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
+	"go.uber.org/zap/zapcore"
 )
 
 type (
@@ -163,6 +164,10 @@ func (c *mockConsumer) Messages() <-chan kafka.Message {
 	return c.msgC
 }
 
+func (m *mockMessage) MarshalLogObject(zapcore.ObjectEncoder) error {
+	return nil
+}
+
 func (m *mockMessage) Key() []byte {
 	return m.key
 }
@@ -293,6 +298,9 @@ func (m *mockSaramaConsumer) offset(id int) int64 {
 		return 0
 	}
 	return off
+}
+
+func (m *mockSaramaConsumer) ResetPartitionOffset(topic string, partition int32, offset int64, metadata string) {
 }
 
 func (m *mockSaramaConsumer) Errors() <-chan error {
