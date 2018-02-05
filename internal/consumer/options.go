@@ -39,7 +39,6 @@ type (
 		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
 		ConsumerMode           cluster.ConsumerMode
 
-		Limits             TopicPartitionLimitMap
 		PartialConsumption bool
 	}
 )
@@ -55,6 +54,5 @@ func DefaultOptions() *Options {
 		MaxProcessingTime:      250 * time.Millisecond,
 		OffsetPolicy:           sarama.OffsetOldest,
 		ConsumerMode:           cluster.ConsumerModePartitions,
-		Limits:                 NewTopicPartitionLimitMap(nil),
 	}
 }

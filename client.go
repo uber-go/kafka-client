@@ -23,9 +23,6 @@ package kafkaclient
 import (
 	"os"
 
-	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
-	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -39,10 +36,6 @@ type (
 		tally    tally.Scope
 		logger   *zap.Logger
 		resolver kafka.NameResolver
-
-		saramaSyncProducerConstructor func([]string) (sarama.SyncProducer, error)
-		saramaConsumerConstructor     func([]string, string, []string, *cluster.Config) (consumer.SaramaConsumer, error)
-		clusterConsumerConstructor    func(string, string, *consumer.Options, kafka.ConsumerTopicList, chan kafka.Message, consumer.SaramaConsumer, map[string]consumer.DLQ, tally.Scope, *zap.Logger) (kafka.Consumer, error)
 	}
 )
 
@@ -52,9 +45,6 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 		resolver: resolver,
 		logger:   logger,
 		tally:    scope,
-		saramaSyncProducerConstructor: consumer.NewSaramaProducer,
-		saramaConsumerConstructor:     consumer.NewSaramaConsumer,
-		clusterConsumerConstructor:    consumer.NewClusterConsumer,
 	}
 }
 
@@ -64,16 +54,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 // ConsumerOption is used.
 // If partial consumption is enabled, error will not be returned.
 func (c *Client) NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error) {
-	opts := buildOptions(config, consumerOpts...)
-	b := newConsumerBuilder(c.logger, c.tally, config, opts, consumerOpts)
-	b.resolveBrokers(c.resolver)
-	b.buildSaramaProducerMap(c.saramaSyncProducerConstructor)
-	b.buildSaramaConsumerMap(c.saramaConsumerConstructor)
-	if err := b.buildClusterConsumerMap(c.clusterConsumerConstructor); err != nil {
-		return nil, err
-	}
-
-	return b.build()
+	return newConsumerBuilder(config, c.resolver, c.tally, c.logger, consumerOpts...).build()
 }
 
 func clientID() string {

@@ -23,7 +23,6 @@ package consumer
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
@@ -31,6 +30,10 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+)
+
+var (
+	errShutdown = errors.New("error consumer shutdown")
 )
 
 type (
@@ -47,8 +50,6 @@ type (
 		Add(m kafka.Message) error
 	}
 
-	dlqNoop struct{}
-
 	// bufferedErrorTopic is a client side abstraction for an error topic on the Kafka cluster.
 	// This library uses the error topic as a base abstraction for retry and dlq topics.
 	//
@@ -56,11 +57,11 @@ type (
 	// buffer is flushed and a batch of messages is send to the cluster.
 	bufferedErrorTopic struct {
 		topic    string
-		cluster string
+		cluster  string
 		producer sarama.AsyncProducer
 
-		stopC     chan struct{}
-		doneC   chan struct{}
+		stopC chan struct{}
+		doneC chan struct{}
 
 		scope     tally.Scope
 		logger    *zap.Logger
@@ -79,25 +80,16 @@ func NewDLQ(topic, cluster string, client sarama.Client, scope tally.Scope, logg
 
 func newBufferedDLQ(topic, cluster string, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
 	return &bufferedErrorTopic{
-		topic: topic,
-		cluster: cluster,
-		producer: producer,
-		stopC: make(chan struct{}),
-		doneC: make(chan struct{}),
-		scope: scope,
-		logger: logger,
+		topic:     topic,
+		cluster:   cluster,
+		producer:  producer,
+		stopC:     make(chan struct{}),
+		doneC:     make(chan struct{}),
+		scope:     scope,
+		logger:    logger,
 		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster), logger),
 	}
 }
-
-// NewDLQNoop returns a DLQ that drops everything on the floor
-// this is used only when DLQ is not configured for a consumer
-func NewDLQNoop() DLQ {
-	return &dlqNoop{}
-}
-func (d *dlqNoop) Add(m kafka.Message) error { return nil }
-func (d *dlqNoop) Stop()                     {}
-func (d *dlqNoop) Start() error              { return nil }
 
 func (d *bufferedErrorTopic) Start() error {
 	return d.lifecycle.Start(func() error {
@@ -132,39 +124,44 @@ func (d *bufferedErrorTopic) Add(m kafka.Message) error {
 	responseC := make(chan error)
 
 	sm := d.newSaramaMessage(key, value, responseC)
-	d.producer.Input() <- sm
-
 	select {
-	case err := <- responseC: // block until response is received
+	case d.producer.Input() <- sm:
+	case <-d.stopC:
+		return errShutdown
+	}
+	select {
+	case err := <-responseC: // block until response is received
+		// TODO (gteo): add metrics here
 		return err
-	case <- d.stopC:
-		return errors.New("closing producer failed to send")
+	case <-d.stopC:
+		return errShutdown
 	}
 }
 
 func (d *bufferedErrorTopic) asyncProducerResponseLoop() {
 	for {
 		select {
-		case msg := <- d.producer.Successes():
+		case msg := <-d.producer.Successes():
 			if msg == nil {
 				continue
 			}
 			responseC, ok := msg.Metadata.(chan error)
 			if !ok {
+				d.logger.Error("fail to convert sarama ProducerMessage metadata to ")
 				continue
 			}
 			responseC <- nil
-		case perr := <- d.producer.Errors():
+		case perr := <-d.producer.Errors():
 			if perr == nil {
 				continue
 			}
-			responseC,  ok := perr.Msg.Metadata.(chan error)
+			responseC, ok := perr.Msg.Metadata.(chan error)
 			if !ok {
 				continue
 			}
 			err := perr.Err
 			responseC <- err
-		case d.stopC:
+		case <-d.stopC:
 			d.shutdown()
 			return
 		}
@@ -178,8 +175,8 @@ func (d *bufferedErrorTopic) shutdown() {
 func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan error) *sarama.ProducerMessage {
 	return &sarama.ProducerMessage{
 		Topic:    d.topic,
-		Key:     sarama.ByteEncoder(key),
-		Value: sarama.ByteEncoder(value),
+		Key:      sarama.ByteEncoder(key),
+		Value:    sarama.ByteEncoder(value),
 		Metadata: responseC,
 	}
 }

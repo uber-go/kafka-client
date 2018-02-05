@@ -21,9 +21,8 @@
 package consumer
 
 import (
-	"testing"
-
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -38,14 +37,15 @@ import (
 type (
 	ClusterConsumerTestSuite struct {
 		suite.Suite
-		consumer       *clusterConsumer
+		consumer       *ClusterConsumer
+		topicConsumer  *TopicConsumer
 		saramaConsumer *mockSaramaConsumer
 		dlqProducer    *mockDLQProducer
+		msgCh          chan kafka.Message
 		topic          string
 		dlqTopic       string
 		options        *Options
 		logger         *zap.Logger
-		limits         TopicPartitionLimitMap
 	}
 )
 
@@ -58,11 +58,8 @@ func testConsumerOptions() *Options {
 		RebalanceDwellTime:     time.Second,
 		MaxProcessingTime:      5 * time.Millisecond,
 		OffsetPolicy:           sarama.OffsetOldest,
-		Limits:                 NewTopicPartitionLimitMap(nil),
 	}
 }
-
-var _ kafka.Consumer = (*clusterConsumer)(nil)
 
 func TestClusterConsumerTestSuite(t *testing.T) {
 	suite.Run(t, new(ClusterConsumerTestSuite))
@@ -83,23 +80,14 @@ func (s *ClusterConsumerTestSuite) SetupTest() {
 	}
 	s.topic = topic.Topic.Name
 	s.dlqTopic = topic.DLQ.Name
-	config := &kafka.ConsumerConfig{
-		TopicList:   []kafka.ConsumerTopic{topic},
-		GroupName:   "unit-test-cg",
-		Concurrency: 4,
-	}
 	s.options = testConsumerOptions()
-	s.limits = NewTopicPartitionLimitMap(nil)
 	s.logger = zap.NewNop()
-	s.dlqProducer = newMockDLQProducer()
+	s.msgCh = make(chan kafka.Message, 10)
 	s.saramaConsumer = newMockSaramaConsumer()
-	msgCh := make(chan kafka.Message)
-	var err error
-	dlq := map[string]DLQ{
-		topic.DLQ.HashKey(): NewDLQ(s.dlqTopic, topic.DLQ.Cluster, s.dlqProducer, tally.NoopScope, s.logger),
-	}
-	s.consumer, err = newClusterConsumer(config.GroupName, topic.Cluster, s.options, config.TopicList, msgCh, s.saramaConsumer, dlq, s.limits, tally.NoopScope, s.logger)
-	s.NoError(err)
+	s.dlqProducer = newMockDLQProducer()
+
+	s.topicConsumer = NewTopicConsumer(topic.Name, s.msgCh, s.dlqProducer, s.saramaConsumer, s.options, tally.NoopScope, s.logger)
+	s.consumer = NewClusterConsumer(topic.Cluster, s.saramaConsumer, map[string]*TopicConsumer{s.topic: s.topicConsumer}, tally.NoopScope, s.logger)
 }
 
 func (s *ClusterConsumerTestSuite) TearDownTest() {
@@ -111,12 +99,11 @@ func (s *ClusterConsumerTestSuite) TearDownTest() {
 
 func (s *ClusterConsumerTestSuite) startWorker(count int, concurrency int, nack bool) *sync.WaitGroup {
 	var wg sync.WaitGroup
-	msgCh := s.consumer.Messages()
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			for i := 0; i < count/concurrency; i++ {
-				m := <-msgCh
+				m := <-s.msgCh
 				if nack {
 					m.Nack()
 					continue
@@ -146,11 +133,11 @@ func (s *ClusterConsumerTestSuite) TestWithOnePartition() {
 	s.True(util.AwaitWaitGroup(workerWG, time.Second)) // wait for messages to be consumed
 
 	// do assertions
-	s.Equal(0, len(s.consumer.msgCh), "channel expected to be empty")
+	s.Equal(0, len(s.msgCh), "channel expected to be empty")
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(1) == int64(100) }, time.Second))
 	s.Equal(0, s.dlqProducer.backlog())
 
-	cp := s.consumer.partitions.Get(TopicPartition{"unit-test", 1})
+	cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1]
 	s.Equal(int64(100), s.saramaConsumer.offset(1), "wrong commit offset")
 	s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 
@@ -176,10 +163,10 @@ func (s *ClusterConsumerTestSuite) TestWithManyPartitions() {
 		}
 	}
 	s.True(util.AwaitWaitGroup(workerWG, 2*time.Second)) // wait for all messages to be consumed
-	s.Equal(0, len(s.consumer.msgCh))
+	s.Equal(0, len(s.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.partitions.Get(TopicPartition{"unit-test", 1})
+		cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[1]
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}
@@ -201,7 +188,7 @@ func (s *ClusterConsumerTestSuite) TestPartitionRebalance() {
 			pc.start()
 		}
 		s.True(util.AwaitWaitGroup(workerWG, 2*time.Second)) // wait for all messages to be consumed
-		s.Equal(0, len(s.consumer.msgCh))
+		s.Equal(0, len(s.msgCh))
 		for i := 0; i < nPartitions; i++ {
 			off := int64(100 * (r + 1))
 			s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == off }, time.Minute))
@@ -220,7 +207,7 @@ func (s *ClusterConsumerTestSuite) TestDuplicates() {
 	pc.start()
 	pc.start()
 	s.True(util.AwaitWaitGroup(workerWG, 2*time.Second)) // wait for all messages to be consumed
-	s.Equal(0, len(s.consumer.msgCh))
+	s.Equal(0, len(s.msgCh))
 	s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(1) == int64(100) }, time.Second))
 	s.Equal(int64(100), s.saramaConsumer.offset(1))
 	s.Equal(0, s.dlqProducer.backlog())
@@ -237,44 +224,12 @@ func (s *ClusterConsumerTestSuite) TestDLQ() {
 		pc.start()
 	}
 	s.True(util.AwaitWaitGroup(workerWG, 2*time.Second)) // wait for all messages to be consumed
-	s.Equal(0, len(s.consumer.msgCh))
+	s.Equal(0, len(s.msgCh))
 	for i := 0; i < nPartitions; i++ {
 		s.True(util.AwaitCondition(func() bool { return s.saramaConsumer.offset(i) == int64(100) }, time.Second))
-		cp := s.consumer.partitions.Get(TopicPartition{"unit-test", int32(i)})
+		cp := s.consumer.topicConsumerMap["unit-test"].partitionConsumerMap[int32(i)]
 		s.Equal(int64(100), s.saramaConsumer.offset(i), "wrong commit offset")
 		s.True(cp.ackMgr.unackedSeqList.list.Empty(), "unacked offset list must be empty")
 	}
 	s.Equal(nPartitions*100, s.dlqProducer.backlog())
-}
-
-func (s *ClusterConsumerTestSuite) TestConsumerWithLimit() {
-	// partition 0 will receive 1 message
-	// partition 1 will receive 0 messages
-	limits := NewTopicPartitionLimitMap(map[TopicPartition]int64{
-		{Topic: s.topic, Partition: 0}: 1,
-	})
-	limits.checkInterval = time.Millisecond
-	s.consumer.limits = limits
-
-	s.NoError(s.consumer.Start())
-	s.startWorker(100, 1, false)
-
-	// Create 2 partitions consumers, each sending 100 messages
-	// Only 1 of these messages should pass though limit
-	nPartitions := 2
-	for i := 0; i < nPartitions; i++ {
-		pc := newMockPartitionedConsumer(s.topic, int32(i), 0, s.options.PartitionRcvBufferSize)
-		s.saramaConsumer.partitionC <- pc
-		pc.start()
-	}
-
-	// Sleep some amount of time to ensure messages get processed
-	time.Sleep(100 * time.Millisecond)
-	s.Equal(0, len(s.consumer.msgCh))
-
-	// Consumer should auto close once limit has been reached
-	util.AwaitCondition(func() bool {
-		<-s.consumer.Closed()
-		return true
-	}, 100*time.Millisecond)
 }

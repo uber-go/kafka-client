@@ -53,8 +53,22 @@ type (
 	// saramaProducer is an internal version of SaramaConsumer that implements a close method that can be safely called
 	// multiple times.
 	saramaProducer struct {
-		sarama.SyncProducer
+		sarama.AsyncProducer
 		lifecycle *util.RunLifecycle
+	}
+
+	// saramaClient is an internal version of sarama Client that implements a close method that can be safely called
+	// multiple times
+	saramaClient struct {
+		sarama.Client
+		lifecycle *util.RunLifecycle
+	}
+
+	// Constructors wraps multiple Sarama Constructors, which can be used for tests.
+	Constructors struct {
+		NewSaramaProducer func(sarama.Client) (sarama.AsyncProducer, error)
+		NewSaramaConsumer func([]string, string, []string, *cluster.Config) (SaramaConsumer, error)
+		NewSaramaClient   func([]string, *sarama.Config) (sarama.Client, error)
 	}
 )
 
@@ -79,14 +93,24 @@ func newSaramaConsumer(c SaramaConsumer) (SaramaConsumer, error) {
 	return &sc, nil
 }
 
-// NewSaramaProducer returns a new SyncProducer that has Close method that can be called multiple times.
-func NewSaramaProducer(brokers []string) (sarama.SyncProducer, error) {
+// Close overwrites the underlying SaramaConsumer Close method with one that can be safely called multiple times.
+//
+// This close will always return nil error.
+func (p *saramaConsumer) Close() error {
+	p.lifecycle.Stop(func() {
+		p.SaramaConsumer.Close()
+	})
+	return nil
+}
+
+// NewSaramaProducer returns a new AsyncProducer that has Close method that can be called multiple times.
+func NewSaramaProducer(client sarama.Client) (sarama.AsyncProducer, error) {
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 	config.Producer.Flush.Frequency = time.Millisecond * 500
 
-	p, err := sarama.NewSyncProducer(brokers, config)
+	p, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +118,10 @@ func NewSaramaProducer(brokers []string) (sarama.SyncProducer, error) {
 	return newSaramaProducer(p)
 }
 
-func newSaramaProducer(p sarama.SyncProducer) (sarama.SyncProducer, error) {
+func newSaramaProducer(p sarama.AsyncProducer) (sarama.AsyncProducer, error) {
 	sp := saramaProducer{
-		SyncProducer: p,
-		lifecycle:    util.NewRunLifecycle("sarama-producer", zap.NewNop()),
+		AsyncProducer: p,
+		lifecycle:     util.NewRunLifecycle("sarama-producer", zap.NewNop()),
 	}
 
 	sp.lifecycle.Start(func() error { return nil }) // must start lifecycle so stop will stop
@@ -105,22 +129,35 @@ func newSaramaProducer(p sarama.SyncProducer) (sarama.SyncProducer, error) {
 	return &sp, nil
 }
 
-// Close overwrites the underlying sarama SyncProducer Close method with one that can be safely called multiple times.
+// Close overwrites the underlying Sarama Close method with one that can be safely called multiple times.
 //
 // This close will always return nil error.
 func (p *saramaProducer) Close() error {
 	p.lifecycle.Stop(func() {
-		p.SyncProducer.Close()
+		p.AsyncProducer.Close()
 	})
 	return nil
 }
 
-// Close overwrites the underlying SaramaConsumer Close method with one that can be safely called multiple times.
+// NewSaramaClient returns an internal sarama Client, which can be safely closed multiple times.
+func NewSaramaClient(brokers []string, config *sarama.Config) (sarama.Client, error) {
+	sc, err := sarama.NewClient(brokers, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &saramaClient{
+		Client:    sc,
+		lifecycle: util.NewRunLifecycle("sarama-client", zap.NewNop()),
+	}, nil
+}
+
+// Close overwrites the underlying Sarama Close method with one that can be safely called multiple times.
 //
 // This close will always return nil error.
-func (p *saramaConsumer) Close() error {
-	p.lifecycle.Stop(func() {
-		p.SaramaConsumer.Close()
+func (c *saramaClient) Close() error {
+	c.lifecycle.Stop(func() {
+		c.Client.Close()
 	})
 	return nil
 }

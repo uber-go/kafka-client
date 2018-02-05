@@ -44,18 +44,21 @@ type (
 		lifecycle *util.RunLifecycle
 	}
 	mockMessage struct {
-		key       []byte
-		value     []byte
-		topic     string
-		partition int32
-		offset    int64
-		timestamp time.Time
-		ackErr    error
-		nackErr   error
+		key        []byte
+		value      []byte
+		topic      string
+		partition  int32
+		offset     int64
+		timestamp  time.Time
+		retryCount int64
+		ackErr     error
+		nackErr    error
 	}
 	mockSaramaProducer struct {
-		sync.Mutex
-		errs sarama.ProducerErrors
+		closed   int32
+		inputC   chan *sarama.ProducerMessage
+		successC chan *sarama.ProducerMessage
+		errorC   chan *sarama.ProducerError
 	}
 	mockSaramaConsumer struct {
 		sync.Mutex
@@ -75,11 +78,39 @@ type (
 	}
 	mockDLQProducer struct {
 		sync.Mutex
-		closed int64
-		size   int
-		keys   map[string]struct{}
+		stopped  int32
+		messages []kafka.Message
 	}
 )
+
+func newMockSaramaProducer() *mockSaramaProducer {
+	return &mockSaramaProducer{
+		inputC:   make(chan *sarama.ProducerMessage, 10),
+		successC: make(chan *sarama.ProducerMessage, 10),
+		errorC:   make(chan *sarama.ProducerError, 10),
+	}
+}
+
+func (m *mockSaramaProducer) AsyncClose() {
+	atomic.AddInt32(&m.closed, 1)
+}
+
+func (m *mockSaramaProducer) Close() error {
+	m.AsyncClose()
+	return nil
+}
+
+func (m *mockSaramaProducer) Input() chan<- *sarama.ProducerMessage {
+	return m.inputC
+}
+
+func (m *mockSaramaProducer) Successes() <-chan *sarama.ProducerMessage {
+	return m.successC
+}
+
+func (m *mockSaramaProducer) Errors() <-chan *sarama.ProducerError {
+	return m.errorC
+}
 
 func newMockConsumer(name string, topics []string, msgC chan kafka.Message) *mockConsumer {
 	return &mockConsumer{
@@ -153,30 +184,16 @@ func (m *mockMessage) Timestamp() time.Time {
 	return m.timestamp
 }
 
+func (m *mockMessage) RetryCount() int64 {
+	return m.retryCount
+}
+
 func (m *mockMessage) Ack() error {
 	return m.ackErr
 }
 
 func (m *mockMessage) Nack() error {
 	return m.nackErr
-}
-
-func newMockSaramaProducer() *mockSaramaProducer {
-	return &mockSaramaProducer{
-		errs: make([]*sarama.ProducerError, 0, 10),
-	}
-}
-
-func (m *mockSaramaProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
-	return 0, 0, nil
-}
-
-func (m *mockSaramaProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
-	return m.errs
-}
-
-func (m *mockSaramaProducer) Close() error {
-	return nil
 }
 
 func newMockPartitionedConsumer(topic string, id int32, beginOffset int64, rcvBufSize int) *mockPartitionedConsumer {
@@ -323,41 +340,31 @@ func (m *mockSaramaConsumer) isClosed() bool {
 
 func newMockDLQProducer() *mockDLQProducer {
 	return &mockDLQProducer{
-		keys: make(map[string]struct{}),
+		messages: make([]kafka.Message, 0, 100),
+		stopped:  0,
 	}
-}
-func (d *mockDLQProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
-	d.Lock()
-	defer d.Unlock()
-	key := string(msg.Key.(sarama.ByteEncoder))
-	if d.size < 5 {
-		// for the first few messages throw errors to test backoff/retry
-		if _, ok := d.keys[key]; !ok {
-			d.keys[key] = struct{}{}
-			return 0, 0, fmt.Errorf("intermittent error")
-		}
-	}
-	d.size++
-	d.keys[key] = struct{}{}
-	return 0, 0, nil
 }
 
-func (d *mockDLQProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
-	return fmt.Errorf("not supported")
-}
-func (d *mockDLQProducer) Close() error {
-	d.Lock()
-	defer d.Unlock()
-	atomic.AddInt64(&d.closed, 1)
+func (d *mockDLQProducer) Start() error {
 	return nil
 }
-func (d *mockDLQProducer) isClosed() bool {
+
+func (d *mockDLQProducer) Stop() {
+	atomic.AddInt32(&d.stopped, 1)
+}
+
+func (d *mockDLQProducer) Add(m kafka.Message) error {
 	d.Lock()
 	defer d.Unlock()
-	return atomic.LoadInt64(&d.closed) == 1
+	d.messages = append(d.messages, m)
+	return nil
+}
+
+func (d *mockDLQProducer) isClosed() bool {
+	return atomic.LoadInt32(&d.stopped) > 0
 }
 func (d *mockDLQProducer) backlog() int {
 	d.Lock()
 	defer d.Unlock()
-	return d.size
+	return len(d.messages)
 }

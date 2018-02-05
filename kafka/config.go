@@ -42,6 +42,7 @@ type (
 		Cluster string
 		// BrokerList for the cluster to consume this topic from
 		// If this is empty, we will get the broker list using the NameResolver
+		// TODO (gteo): remove this and rely on a NameResolver as single source for broker IP
 		BrokerList []string
 	}
 

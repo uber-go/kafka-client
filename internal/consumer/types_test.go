@@ -39,13 +39,13 @@ func TestSaramaConsumer(t *testing.T) {
 }
 
 func TestSaramaProducer(t *testing.T) {
-	mockP := newMockDLQProducer()
+	mockP := newMockSaramaProducer()
 	c, err := newSaramaProducer(mockP)
 	assert.NoError(t, err)
 	assert.NoError(t, c.Close())
-	assert.EqualValues(t, 1, atomic.LoadInt64(&mockP.closed))
+	assert.EqualValues(t, 1, atomic.LoadInt32(&mockP.closed))
 
 	// Second close should return no error and not increment closed counter
 	assert.NoError(t, c.Close())
-	assert.EqualValues(t, 1, atomic.LoadInt64(&mockP.closed))
+	assert.EqualValues(t, 1, atomic.LoadInt32(&mockP.closed))
 }
