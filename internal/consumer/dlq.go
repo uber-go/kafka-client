@@ -101,6 +101,7 @@ func (d *bufferedErrorTopic) Start() error {
 func (d *bufferedErrorTopic) Stop() {
 	d.lifecycle.Stop(func() {
 		close(d.stopC)
+		d.producer.Close()
 		<-d.doneC
 	})
 }
