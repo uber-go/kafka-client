@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	cluster "github.com/bsm/sarama-cluster"
+	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/list"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
@@ -85,7 +85,7 @@ func newPartitionConsumer(
 		logger:       logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
 		stopC:        make(chan struct{}),
 		ackMgr:       newAckManager(maxUnAcked, scope, logger),
-		lifecycle:    util.NewRunLifecycle(name, logger),
+		lifecycle:    util.NewRunLifecycle(name),
 	}
 }
 

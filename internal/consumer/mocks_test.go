@@ -30,7 +30,6 @@ import (
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
-	"go.uber.org/zap"
 )
 
 type (
@@ -54,6 +53,11 @@ type (
 		ackErr     error
 		nackErr    error
 	}
+
+	mockSaramaClient struct {
+		closed int32
+	}
+
 	mockSaramaProducer struct {
 		closed   int32
 		inputC   chan *sarama.ProducerMessage
@@ -118,7 +122,7 @@ func newMockConsumer(name string, topics []string, msgC chan kafka.Message) *moc
 		topics:    topics,
 		msgC:      msgC,
 		doneC:     make(chan struct{}),
-		lifecycle: util.NewRunLifecycle("mockConsumer-"+name, zap.L()),
+		lifecycle: util.NewRunLifecycle("mockConsumer-" + name),
 	}
 }
 
@@ -367,4 +371,67 @@ func (d *mockDLQProducer) backlog() int {
 	d.Lock()
 	defer d.Unlock()
 	return len(d.messages)
+}
+
+func newMockSaramaClient() *mockSaramaClient {
+	return &mockSaramaClient{
+		closed: 0,
+	}
+}
+
+func (m *mockSaramaClient) Config() *sarama.Config {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Brokers() []*sarama.Broker {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Topics() ([]string, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Partitions(topic string) ([]int32, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) WritablePartitions(topic string) ([]int32, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Leader(topic string, partitionID int32) (*sarama.Broker, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Replicas(topic string, partitionID int32) ([]int32, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) InSyncReplicas(topic string, partitionID int32) ([]int32, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) RefreshMetadata(topics ...string) error {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) GetOffset(topic string, partitionID int32, time int64) (int64, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Coordinator(consumerGroup string) (*sarama.Broker, error) {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) RefreshCoordinator(consumerGroup string) error {
+	panic("implement me")
+}
+
+func (m *mockSaramaClient) Close() error {
+	atomic.AddInt32(&m.closed, 1)
+	return nil
+}
+
+func (m *mockSaramaClient) Closed() bool {
+	return atomic.LoadInt32(&m.closed) > 0
 }

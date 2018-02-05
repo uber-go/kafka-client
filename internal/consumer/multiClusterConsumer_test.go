@@ -22,6 +22,7 @@ package consumer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/suite"
@@ -38,6 +39,9 @@ type MultiClusterConsumerTestSuite struct {
 	options  *Options
 	msgCh    chan kafka.Message
 }
+
+// verify *MultiClusterConsumer is implements kafka.Consumer
+var _ kafka.Consumer = (*MultiClusterConsumer)(nil)
 
 func (s *MultiClusterConsumerTestSuite) SetupTest() {
 	topic := kafka.ConsumerTopic{
@@ -69,6 +73,8 @@ func (s *MultiClusterConsumerTestSuite) SetupTest() {
 		tally.NoopScope,
 		zap.L(),
 	)
+	s.Equal(s.config.GroupName, s.consumer.Name())
+	s.Equal(s.config.TopicList.TopicNames(), s.consumer.Topics())
 }
 
 func (s *MultiClusterConsumerTestSuite) TeardownTest() {
@@ -93,4 +99,23 @@ func (s *MultiClusterConsumerTestSuite) TestStartSucceeds() {
 	started, stopped = cc2.lifecycle.Status()
 	s.True(started)
 	s.False(stopped)
+
+	s.consumer.Stop()
+	select {
+	case <-s.consumer.Closed():
+	case <-time.After(time.Millisecond):
+		s.Fail("Consumer should be closed")
+	}
+}
+
+func (s *MultiClusterConsumerTestSuite) TestStartError() {
+	cc1 := NewClusterConsumer("cc1", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.L())
+	cc2 := NewClusterConsumer("cc2", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.L())
+	s.consumer.clusterConsumerMap["cc1"] = cc1
+	s.consumer.clusterConsumerMap["cc2"] = cc2
+
+	cc1.Start()
+	cc1.Stop()
+
+	s.Error(s.consumer.Start())
 }

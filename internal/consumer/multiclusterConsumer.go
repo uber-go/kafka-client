@@ -63,7 +63,7 @@ func NewMultiClusterConsumer(
 		doneC:     make(chan struct{}),
 		scope:     scope,
 		logger:    logger,
-		lifecycle: util.NewRunLifecycle(groupName+"-consumer", logger),
+		lifecycle: util.NewRunLifecycle(groupName + "-consumer"),
 	}
 }
 

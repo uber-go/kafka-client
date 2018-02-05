@@ -38,8 +38,6 @@ type (
 		RebalanceDwellTime     time.Duration
 		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
 		ConsumerMode           cluster.ConsumerMode
-
-		PartialConsumption bool
 	}
 )
 

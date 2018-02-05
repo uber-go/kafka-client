@@ -21,11 +21,12 @@
 package consumer
 
 import (
+	"sync"
+
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"sync"
 )
 
 type (
@@ -49,7 +50,6 @@ func NewTopicConsumer(
 	topic string,
 	msgC chan kafka.Message,
 	dlq DLQ,
-	saramaConsumer SaramaConsumer,
 	options *Options,
 	scope tally.Scope,
 	logger *zap.Logger,
@@ -59,7 +59,7 @@ func NewTopicConsumer(
 		msgC:                 msgC,
 		partitionConsumerMap: make(map[int32]*partitionConsumer),
 		dlq:                  dlq,
-		saramaConsumer:       saramaConsumer,
+		saramaConsumer:       nil,
 		options:              options,
 		scope:                scope,
 		logger:               logger,
@@ -72,8 +72,9 @@ func (c *TopicConsumer) Topic() string {
 }
 
 // SetSaramaConsumer is a sets the SaramaConsumer for this TopicConsumer.
-func (c *TopicConsumer) SetSaramaConsumer(sc SaramaConsumer) {
+func (c *TopicConsumer) SetSaramaConsumer(sc SaramaConsumer) *TopicConsumer {
 	c.saramaConsumer = sc
+	return c
 }
 
 // Start the DLQ consumer goroutine.

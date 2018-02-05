@@ -21,9 +21,10 @@
 package consumer
 
 import (
-	"github.com/stretchr/testify/assert"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSaramaConsumer(t *testing.T) {
@@ -48,4 +49,16 @@ func TestSaramaProducer(t *testing.T) {
 	// Second close should return no error and not increment closed counter
 	assert.NoError(t, c.Close())
 	assert.EqualValues(t, 1, atomic.LoadInt32(&mockP.closed))
+}
+
+func TestSaramaClient(t *testing.T) {
+	mock := newMockSaramaClient()
+	c, err := newSaramaClient(mock)
+	assert.NoError(t, err)
+	assert.NoError(t, c.Close())
+	assert.EqualValues(t, 1, atomic.LoadInt32(&mock.closed))
+
+	// Second close should return no error and not increment closed counter
+	assert.NoError(t, c.Close())
+	assert.EqualValues(t, 1, atomic.LoadInt32(&mock.closed))
 }

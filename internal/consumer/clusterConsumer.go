@@ -22,12 +22,13 @@ package consumer
 
 import (
 	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"strconv"
-	"sync"
 )
 
 type (
@@ -58,7 +59,7 @@ func NewClusterConsumer(
 		topicConsumerMap: consumerMap,
 		scope:            scope,
 		logger:           logger,
-		lifecycle:        util.NewRunLifecycle(cluster+"-consumer", logger),
+		lifecycle:        util.NewRunLifecycle(cluster + "-consumer"),
 		stopC:            make(chan struct{}),
 		doneC:            make(chan struct{}),
 	}
@@ -111,7 +112,7 @@ func (c *ClusterConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 	topic := pc.Topic()
 	topicConsumer, ok := c.topicConsumerMap[topic]
 	if !ok {
-		c.logger.Warn("unable to find topic consumer", zap.String("topic", topic))
+		c.logger.Error("cannot consume messages for missing topic consumer", zap.String("topic", topic))
 		return
 	}
 	topicConsumer.addPartitionConsumer(pc)

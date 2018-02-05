@@ -21,9 +21,8 @@
 package util
 
 import (
+	"errors"
 	"sync"
-
-	"go.uber.org/zap"
 )
 
 // RunLifecycle manages the start/stop lifecycle
@@ -33,13 +32,12 @@ type RunLifecycle struct {
 	name    string
 	started bool
 	stopped bool
-	logger  *zap.Logger
 }
 
 // NewRunLifecycle returns a lifecycle object that can be
 // used by a Runnable implementation to make sure the start/stop
 // operations are idempotent
-func NewRunLifecycle(name string, logger *zap.Logger) *RunLifecycle {
+func NewRunLifecycle(name string) *RunLifecycle {
 	return &RunLifecycle{name: name}
 }
 
@@ -49,7 +47,7 @@ func (r *RunLifecycle) Start(action func() error) error {
 	r.Lock()
 	defer r.Unlock()
 	if r.stopped {
-		r.logger.Fatal("attempt to restart a previously stopped runnable", zap.String("name", r.name))
+		return errors.New(r.name + " cannot start a previously stopped runnable")
 	}
 	if !r.started {
 		r.started = true

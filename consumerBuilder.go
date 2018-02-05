@@ -97,7 +97,6 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 			topic.Name,
 			c.msgCh,
 			dlq,
-			nil,
 			c.options,
 			c.scope,
 			c.logger,

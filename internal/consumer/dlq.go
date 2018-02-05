@@ -87,7 +87,7 @@ func newBufferedDLQ(topic, cluster string, producer sarama.AsyncProducer, scope 
 		doneC:     make(chan struct{}),
 		scope:     scope,
 		logger:    logger,
-		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster), logger),
+		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster)),
 	}
 }
 
