@@ -51,9 +51,9 @@ type (
 	// the topic to consume from and the DLQ topic to send nacked messages to.
 	ConsumerTopic struct {
 		Topic
-		Retry Topic
+		Retry      Topic
 		RetryCount int64
-		DLQ Topic
+		DLQ        Topic
 	}
 
 	// ConsumerTopicList is a list of consumer topics
