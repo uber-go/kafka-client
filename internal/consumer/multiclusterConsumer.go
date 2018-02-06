@@ -99,11 +99,10 @@ func (c *MultiClusterConsumer) Start() error {
 
 // Stop will stop the consumer.
 func (c *MultiClusterConsumer) Stop() {
-	// clusterConsumers are safe to stop multiple times.
-	for _, consumer := range c.clusterConsumerMap {
-		consumer.Stop()
-	}
 	c.lifecycle.Stop(func() {
+		for _, consumer := range c.clusterConsumerMap {
+			consumer.Stop()
+		}
 		for _, client := range c.clusterToSaramaClientMap {
 			client.Close()
 		}

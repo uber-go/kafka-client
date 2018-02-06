@@ -31,18 +31,19 @@ import (
 
 type (
 	consumerBuilder struct {
-		config *kafka.ConsumerConfig
+		clusterSaramaClientMap   map[string]sarama.Client
+		clusterSaramaConsumerMap map[string]consumer.SaramaConsumer
+		clusterTopicConsumerMap  map[string]map[string]*consumer.TopicConsumer
+		clusterConsumerMap       map[string]*consumer.ClusterConsumer
 
-		clusterSaramaClientMap  map[string]sarama.Client
-		clusterTopicConsumerMap map[string]map[string]*consumer.TopicConsumer
-		clusterConsumerMap      map[string]*consumer.ClusterConsumer
+		msgCh  chan kafka.Message
+		logger *zap.Logger
+		scope  tally.Scope
 
-		msgCh        chan kafka.Message
-		logger       *zap.Logger
-		scope        tally.Scope
 		constructors consumer.Constructors
 		resolver     kafka.NameResolver
 
+		kafkaConfig         *kafka.ConsumerConfig
 		options             *consumer.Options
 		saramaConfig        *sarama.Config
 		saramaClusterConfig *cluster.Config
@@ -58,7 +59,6 @@ func newConsumerBuilder(
 	consumerOptions := buildOptions(config, opts...)
 	saramaClusterConfig := buildSaramaConfig(consumerOptions)
 	return &consumerBuilder{
-		config:                  config,
 		clusterSaramaClientMap:  make(map[string]sarama.Client),
 		clusterTopicConsumerMap: make(map[string]map[string]*consumer.TopicConsumer),
 		clusterConsumerMap:      make(map[string]*consumer.ClusterConsumer),
@@ -72,77 +72,66 @@ func newConsumerBuilder(
 		},
 		resolver:            resolver,
 		options:             consumerOptions,
+		kafkaConfig:         config,
 		saramaConfig:        &saramaClusterConfig.Config,
 		saramaClusterConfig: saramaClusterConfig,
 	}
 }
-
 func (c *consumerBuilder) build() (kafka.Consumer, error) {
-	// build Topic Consumer for each consumer topic
-	for _, topic := range c.config.TopicList {
-		// Get or make DLQ topic
-		// (Get or make Retry topic here too)
-		dlq, err := c.getOrAddDLQ(topic.DLQ)
-		if err != nil {
-			return nil, err
-		}
-
-		// Get or make cluster consumer
-		// (Get or make Retry and DLQ topic here too)
-		topicConsumerMap, ok := c.clusterTopicConsumerMap[topic.Topic.Cluster]
+	// build TopicList per cluster
+	clusterTopicsMap := make(map[string]kafka.ConsumerTopicList)
+	for _, consumerTopic := range c.kafkaConfig.TopicList {
+		topicList, ok := clusterTopicsMap[consumerTopic.Topic.Cluster]
 		if !ok {
-			topicConsumerMap = make(map[string]*consumer.TopicConsumer)
+			topicList = make([]kafka.ConsumerTopic, 0, 10)
 		}
-		topicConsumerMap[topic.Name] = consumer.NewTopicConsumer(
-			topic.Name,
-			c.msgCh,
-			dlq,
-			c.options,
-			c.scope,
-			c.logger,
-		)
-		c.clusterTopicConsumerMap[topic.Topic.Cluster] = topicConsumerMap
+		topicList = append(topicList, consumerTopic)
+		clusterTopicsMap[consumerTopic.Topic.Cluster] = topicList
+
+		// construct and make retry and dlq consumerTopics here
 	}
 
-	// build cluster consumers
-	for cluster, topicConsumers := range c.clusterTopicConsumerMap {
-		// get topic list to consume
-		topicList := make([]string, 0, len(topicConsumers))
-		for topic := range topicConsumers {
-			topicList = append(topicList, topic)
-		}
-
-		// get broker list
-		brokerList, err := c.resolver.ResolveIPForCluster(cluster)
+	// build cluster consumer
+	for cluster, topicList := range clusterTopicsMap {
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, topicList)
 		if err != nil {
+			c.close()
 			return nil, err
 		}
 
-		// make new sarama consumer
-		saramaConsumer, err := c.constructors.NewSaramaConsumer(brokerList, c.config.GroupName, topicList, c.saramaClusterConfig)
-		if err != nil {
-			return nil, err
+		// build topic consumers
+		for _, topic := range topicList {
+			dlq, err := c.getOrAddDLQ(topic.DLQ)
+			if err != nil {
+				c.close()
+				return nil, err
+			}
+
+			topicConsumer := consumer.NewTopicConsumer(
+				topic.Name,
+				c.msgCh,
+				saramaConsumer,
+				dlq,
+				c.options,
+				c.scope,
+				c.logger,
+			)
+			c.addTopicConsumer(cluster, topic.Name, topicConsumer)
 		}
 
-		// make cluster consumer
 		c.clusterConsumerMap[cluster] = consumer.NewClusterConsumer(
 			cluster,
 			saramaConsumer,
-			topicConsumers,
+			c.clusterTopicConsumerMap[cluster],
 			c.scope,
 			c.logger,
 		)
-
-		// pass reference sarama consumer to topic consumers
-		for _, topicConsumer := range topicConsumers {
-			topicConsumer.SetSaramaConsumer(saramaConsumer)
-		}
 	}
 
 	// make multi cluster consumer
 	return consumer.NewMultiClusterConsumer(
-		c.config.GroupName,
-		c.config.TopicList,
+		c.kafkaConfig.GroupName,
+		c.kafkaConfig.TopicList,
 		c.clusterConsumerMap,
 		c.clusterSaramaClientMap,
 		c.msgCh,
@@ -174,6 +163,44 @@ func (c *consumerBuilder) getOrAddSaramaClient(topic kafka.Topic) (sarama.Client
 	}
 	c.clusterSaramaClientMap[topic.Cluster] = sc
 	return sc, nil
+}
+
+func (c *consumerBuilder) close() {
+	for _, sarama := range c.clusterSaramaClientMap {
+		sarama.Close()
+	}
+	for _, sarama := range c.clusterSaramaConsumerMap {
+		sarama.Close()
+	}
+}
+
+func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList kafka.ConsumerTopicList) (consumer.SaramaConsumer, error) {
+	brokerList, err := c.resolver.ResolveIPForCluster(cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	saramaConsumer, err := c.constructors.NewSaramaConsumer(
+		brokerList,
+		c.kafkaConfig.GroupName,
+		topicList.TopicNames(),
+		c.saramaClusterConfig,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	c.clusterSaramaConsumerMap[cluster] = saramaConsumer
+	return saramaConsumer, nil
+}
+
+func (c *consumerBuilder) addTopicConsumer(cluster, topic string, tc *consumer.TopicConsumer) {
+	topicConsumerMap, ok := c.clusterTopicConsumerMap[cluster]
+	if !ok {
+		topicConsumerMap = make(map[string]*consumer.TopicConsumer)
+	}
+	topicConsumerMap[topic] = tc
+	c.clusterTopicConsumerMap[cluster] = topicConsumerMap
 }
 
 func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) *consumer.Options {

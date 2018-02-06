@@ -49,6 +49,7 @@ type (
 func NewTopicConsumer(
 	topic string,
 	msgC chan kafka.Message,
+	consumer SaramaConsumer,
 	dlq DLQ,
 	options *Options,
 	scope tally.Scope,
@@ -59,7 +60,7 @@ func NewTopicConsumer(
 		msgC:                 msgC,
 		partitionConsumerMap: make(map[int32]*partitionConsumer),
 		dlq:                  dlq,
-		saramaConsumer:       nil,
+		saramaConsumer:       consumer,
 		options:              options,
 		scope:                scope,
 		logger:               logger,
@@ -69,12 +70,6 @@ func NewTopicConsumer(
 // Topic returns the topic that this TopicConsumer is responsible for.
 func (c *TopicConsumer) Topic() string {
 	return c.topic
-}
-
-// SetSaramaConsumer is a sets the SaramaConsumer for this TopicConsumer.
-func (c *TopicConsumer) SetSaramaConsumer(sc SaramaConsumer) *TopicConsumer {
-	c.saramaConsumer = sc
-	return c
 }
 
 // Start the DLQ consumer goroutine.
