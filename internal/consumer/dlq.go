@@ -21,14 +21,19 @@
 package consumer
 
 import (
-	"time"
+	"errors"
+	"fmt"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	"github.com/uber-go/kafka-client/internal/backoff"
+	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+)
+
+var (
+	errShutdown = errors.New("error consumer shutdown")
 )
 
 type (
@@ -36,97 +41,143 @@ type (
 	// can take a message and put them into some sort
 	// of error queue for later processing
 	DLQ interface {
-		Close()
-		// Add adds the given message to DLQ
+		// Start the DLQ producer
+		Start() error
+		// Stop the DLQ producer and close resources it holds.
+		Stop()
+		// Add adds the given message to DLQ.
+		// This is a synchronous call and will block until sending is successful.
 		Add(m kafka.Message) error
 	}
-	dlqImpl struct {
-		topic       string
-		producer    sarama.SyncProducer
-		retryPolicy backoff.RetryPolicy
-		tally       tally.Scope
-		logger      *zap.Logger
-	}
-	dlqNoop struct{}
-)
 
-const (
-	dlqRetryInitialInterval = 200 * time.Millisecond
-	dlqRetryMaxInterval     = 10 * time.Second
+	// bufferedErrorTopic is a client side abstraction for an error topic on the Kafka cluster.
+	// This library uses the error topic as a base abstraction for retry and dlq topics.
+	//
+	// bufferedErrorTopic internally batches messages, so calls to Add may block until the internal
+	// buffer is flushed and a batch of messages is send to the cluster.
+	bufferedErrorTopic struct {
+		topic    string
+		cluster  string
+		producer sarama.AsyncProducer
+
+		stopC chan struct{}
+		doneC chan struct{}
+
+		scope     tally.Scope
+		logger    *zap.Logger
+		lifecycle *util.RunLifecycle
+	}
 )
 
 // NewDLQ returns a DLQ writer for writing to a specific DLQ topic
-func NewDLQ(topic, cluster string, producer sarama.SyncProducer, scope tally.Scope, logger *zap.Logger) DLQ {
-	return &dlqImpl{
-		topic:       topic,
-		producer:    producer,
-		retryPolicy: newDLQRetryPolicy(),
-		tally:       scope,
-		logger:      logger.With(zap.String("topic", topic), zap.String("cluster", cluster)),
-	}
-}
-
-// Add blocks until successfully enqueuing the given
-// message into the error queue
-func (d *dlqImpl) Add(m kafka.Message) error {
-	sm, err := d.newSaramaMessage(m)
-	if err != nil {
-		return err
-	}
-	return backoff.Retry(func() error { return d.add(sm) }, d.retryPolicy, d.isRetryable)
-}
-
-func (d *dlqImpl) Close() {
-	d.producer.Close()
-}
-
-func (d *dlqImpl) add(m *sarama.ProducerMessage) error {
-	_, _, err := d.producer.SendMessage(m)
-	if err != nil {
-		d.logger.Error("error sending message to DLQ", zap.Error(err))
-	}
-	return err
-}
-
-func (d *dlqImpl) isRetryable(err error) bool {
-	return true
-}
-
-func newDLQRetryPolicy() backoff.RetryPolicy {
-	policy := backoff.NewExponentialRetryPolicy(dlqRetryInitialInterval)
-	policy.SetMaximumInterval(dlqRetryMaxInterval)
-	policy.SetExpirationInterval(backoff.NoInterval)
-	return policy
-}
-
-func (d *dlqImpl) newSaramaMessage(m kafka.Message) (*sarama.ProducerMessage, error) {
-	key, err := d.encodeDLQMetadata(m)
+func NewDLQ(topic, cluster string, client sarama.Client, scope tally.Scope, logger *zap.Logger) (DLQ, error) {
+	asyncProducer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		return nil, err
 	}
-	return &sarama.ProducerMessage{
-		Topic: d.topic,
-		Key:   sarama.ByteEncoder(key),
-		Value: sarama.ByteEncoder(m.Value()),
-	}, nil
+	return newBufferedDLQ(topic, cluster, asyncProducer, scope, logger), nil
 }
 
-func (d *dlqImpl) encodeDLQMetadata(m kafka.Message) ([]byte, error) {
+func newBufferedDLQ(topic, cluster string, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
+	return &bufferedErrorTopic{
+		topic:     topic,
+		cluster:   cluster,
+		producer:  producer,
+		stopC:     make(chan struct{}),
+		doneC:     make(chan struct{}),
+		scope:     scope,
+		logger:    logger,
+		lifecycle: util.NewRunLifecycle(fmt.Sprintf("dlqProducer-%s-%s", topic, cluster)),
+	}
+}
+
+func (d *bufferedErrorTopic) Start() error {
+	return d.lifecycle.Start(func() error {
+		go d.asyncProducerResponseLoop()
+		return nil
+	})
+}
+
+func (d *bufferedErrorTopic) Stop() {
+	d.lifecycle.Stop(func() {
+		close(d.stopC)
+		d.producer.Close()
+		<-d.doneC
+	})
+}
+
+func (d *bufferedErrorTopic) Add(m kafka.Message) error {
 	metadata := &DLQMetadata{
-		RetryCount:  0,
+		RetryCount:  m.RetryCount() + 1,
 		Data:        m.Key(),
 		Topic:       m.Topic(),
 		Partition:   m.Partition(),
 		Offset:      m.Offset(),
 		TimestampNs: m.Timestamp().UnixNano(),
 	}
-	return proto.Marshal(metadata)
+
+	key, err := proto.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	value := m.Value()
+	// TODO (gteo): Use a channel pool
+	responseC := make(chan error)
+
+	sm := d.newSaramaMessage(key, value, responseC)
+	select {
+	case d.producer.Input() <- sm:
+	case <-d.stopC:
+		return errShutdown
+	}
+	select {
+	case err := <-responseC: // block until response is received
+		// TODO (gteo): add metrics here
+		return err
+	case <-d.stopC:
+		return errShutdown
+	}
 }
 
-// NewDLQNoop returns a DLQ that drops everything on the floor
-// this is used only when DLQ is not configured for a consumer
-func NewDLQNoop() DLQ {
-	return &dlqNoop{}
+func (d *bufferedErrorTopic) asyncProducerResponseLoop() {
+	for {
+		select {
+		case msg := <-d.producer.Successes():
+			if msg == nil {
+				continue
+			}
+			responseC, ok := msg.Metadata.(chan error)
+			if !ok {
+				d.logger.Error("fail to convert sarama ProducerMessage metadata to ")
+				continue
+			}
+			responseC <- nil
+		case perr := <-d.producer.Errors():
+			if perr == nil {
+				continue
+			}
+			responseC, ok := perr.Msg.Metadata.(chan error)
+			if !ok {
+				continue
+			}
+			err := perr.Err
+			responseC <- err
+		case <-d.stopC:
+			d.shutdown()
+			return
+		}
+	}
 }
-func (d *dlqNoop) Add(m kafka.Message) error { return nil }
-func (d *dlqNoop) Close()                    {}
+
+func (d *bufferedErrorTopic) shutdown() {
+	close(d.doneC)
+}
+
+func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan error) *sarama.ProducerMessage {
+	return &sarama.ProducerMessage{
+		Topic:    d.topic,
+		Key:      sarama.ByteEncoder(key),
+		Value:    sarama.ByteEncoder(value),
+		Metadata: responseC,
+	}
+}

@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
 )
 
 type RunLifecycleTestSuite struct {
@@ -38,7 +37,7 @@ func TestRunLifecycleTestSuite(t *testing.T) {
 
 func (s *RunLifecycleTestSuite) TestSuccessFlow() {
 	state := ""
-	lc := NewRunLifecycle("test", zap.NewNop())
+	lc := NewRunLifecycle("test")
 	err := lc.Start(func() error {
 		state = "started"
 		return nil
@@ -51,7 +50,7 @@ func (s *RunLifecycleTestSuite) TestSuccessFlow() {
 
 func (s *RunLifecycleTestSuite) TestStartError() {
 	state := ""
-	lc := NewRunLifecycle("test", zap.NewNop())
+	lc := NewRunLifecycle("test")
 	err := lc.Start(func() error {
 		state = "started"
 		return fmt.Errorf("test error")
@@ -62,7 +61,7 @@ func (s *RunLifecycleTestSuite) TestStartError() {
 
 func (s *RunLifecycleTestSuite) TestMultipleStarts() {
 	state := "test"
-	lc := NewRunLifecycle("test", zap.NewNop())
+	lc := NewRunLifecycle("test")
 	for i := 0; i < 10; i++ {
 		err := lc.Start(func() error {
 			state = state + "_started"
@@ -75,7 +74,7 @@ func (s *RunLifecycleTestSuite) TestMultipleStarts() {
 
 func (s *RunLifecycleTestSuite) TestMultipleStops() {
 	state := ""
-	lc := NewRunLifecycle("test", zap.NewNop())
+	lc := NewRunLifecycle("test")
 	lc.Start(func() error {
 		state = "started"
 		return nil
@@ -88,7 +87,7 @@ func (s *RunLifecycleTestSuite) TestMultipleStops() {
 
 func (s *RunLifecycleTestSuite) TestStopBeforeStart() {
 	state := "not_started"
-	lc := NewRunLifecycle("test", zap.NewNop())
+	lc := NewRunLifecycle("test")
 	lc.Stop(func() { state = "stopped" })
 	s.Equal("not_started", state)
 	s.True(lc.stopped)

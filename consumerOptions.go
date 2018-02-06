@@ -29,33 +29,4 @@ type (
 	ConsumerOption interface {
 		apply(*consumer.Options)
 	}
-
-	consumerBuildOptions []ConsumerOption
-
-	partialConsumption struct {
-		enabled bool
-		errs    *consumerErrorList
-	}
 )
-
-// EnablePartialConsumption will set the client to return a partial consumer that
-// consumes from as many topics/clusters as it could and it may return an error that lists the
-// topics that failed to connect to their cluster.
-func EnablePartialConsumption() ConsumerOption {
-	return &partialConsumption{
-		enabled: true,
-	}
-}
-
-func (p *partialConsumption) apply(opt *consumer.Options) {
-	opt.PartialConsumption = p.enabled
-}
-
-func (c consumerBuildOptions) addConsumerErrorList(errs *consumerErrorList) {
-	for _, opt := range c {
-		pe, ok := opt.(*partialConsumption)
-		if ok {
-			pe.errs = errs
-		}
-	}
-}
