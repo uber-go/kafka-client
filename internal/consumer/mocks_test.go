@@ -57,7 +57,6 @@ type (
 	mockSaramaClient struct {
 		closed int32
 	}
-
 	mockSaramaProducer struct {
 		closed   int32
 		inputC   chan *sarama.ProducerMessage

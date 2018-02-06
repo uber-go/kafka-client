@@ -37,6 +37,7 @@ type (
 		topic                string
 		msgC                 chan kafka.Message
 		partitionConsumerMap map[int32]*partitionConsumer
+		decodeDLQMetadata    bool
 		dlq                  DLQ
 		saramaConsumer       SaramaConsumer // SaramaConsumer is a shared resource that is owned by clusterConsumer.
 		options              *Options
@@ -51,6 +52,7 @@ func NewTopicConsumer(
 	msgC chan kafka.Message,
 	consumer SaramaConsumer,
 	dlq DLQ,
+	decodeDLQMetadata bool,
 	options *Options,
 	scope tally.Scope,
 	logger *zap.Logger,
@@ -59,6 +61,7 @@ func NewTopicConsumer(
 		topic:                topic,
 		msgC:                 msgC,
 		partitionConsumerMap: make(map[int32]*partitionConsumer),
+		decodeDLQMetadata:    decodeDLQMetadata,
 		dlq:                  dlq,
 		saramaConsumer:       consumer,
 		options:              options,
@@ -92,8 +95,7 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 		delete(c.partitionConsumerMap, partition)
 	}
 	c.logger.Info("new partition consumer", zap.Int32("partition", partition))
-	// TODO (gteo): fix limiter
-	p := newPartitionConsumer(c.saramaConsumer, pc, noLimit, c.options, c.msgC, c.dlq, c.scope, c.logger)
+	p := newPartitionConsumer(c.saramaConsumer, pc, c.decodeDLQMetadata, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()
 }

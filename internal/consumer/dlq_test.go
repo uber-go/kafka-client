@@ -196,3 +196,36 @@ func (s *DLQTestSuite) TestBatchProducerWaitingForProducerDoesNotDeadlock() {
 		s.Equal(errShutdown, err)
 	}
 }
+
+type DLQMultiplexerTestSuite struct {
+	suite.Suite
+	msg         *mockMessage
+	retry       *mockDLQProducer
+	dlq         *mockDLQProducer
+	multiplexer *retryDLQMultiplexer
+}
+
+func TestDLQMultiplexerTestSuite(t *testing.T) {
+	suite.Run(t, new(DLQMultiplexerTestSuite))
+}
+
+func (s *DLQMultiplexerTestSuite) SetupTest() {
+	s.msg = new(mockMessage)
+	s.retry = newMockDLQProducer()
+	s.dlq = newMockDLQProducer()
+	s.multiplexer = &retryDLQMultiplexer{
+		retryCountThreshold: 3,
+		retryTopic:          s.retry,
+		dlqTopic:            s.dlq,
+	}
+}
+
+func (s *DLQMultiplexerTestSuite) TestAdd() {
+	s.multiplexer.Add(s.msg)
+	s.Equal(1, s.retry.backlog())
+	s.Equal(0, s.dlq.backlog())
+
+	s.msg.retryCount = 3
+	s.multiplexer.Add(s.msg)
+	s.Equal(1, s.dlq.backlog())
+}

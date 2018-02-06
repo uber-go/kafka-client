@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -42,31 +41,28 @@ type (
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id             int32
-		topic          string
-		decodeMetadata bool
-		limit          int64
-		reachedLimit   int32 // 0 = false, non-0 = true
-		msgCh          chan kafka.Message
-		ackMgr         *ackManager
-		sarama         SaramaConsumer
-		pConsumer      cluster.PartitionConsumer
-		dlq            DLQ
-		options        *Options
-		tally          tally.Scope
-		logger         *zap.Logger
-		stopC          chan struct{}
-		lifecycle      *util.RunLifecycle
+		id                int32
+		topic             string
+		decodeDLQMetadata bool
+		msgCh             chan kafka.Message
+		ackMgr            *ackManager
+		sarama            SaramaConsumer
+		pConsumer         cluster.PartitionConsumer
+		dlq               DLQ
+		options           *Options
+		tally             tally.Scope
+		logger            *zap.Logger
+		stopC             chan struct{}
+		lifecycle         *util.RunLifecycle
 	}
 )
 
 // newPartitionConsumer returns a kafka consumer that can
 // read messages from a given [ topic, partition ] tuple
-// TODO (gteo): pass through should decode key
 func newPartitionConsumer(
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
-	limit int64,
+	decodeMetadata bool,
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
@@ -75,20 +71,19 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:           pConsumer.Partition(),
-		topic:        pConsumer.Topic(),
-		sarama:       sarama,
-		pConsumer:    pConsumer,
-		limit:        limit,
-		reachedLimit: 0,
-		options:      options,
-		msgCh:        msgCh,
-		dlq:          dlq,
-		tally:        scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:       logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
-		stopC:        make(chan struct{}),
-		ackMgr:       newAckManager(maxUnAcked, scope, logger),
-		lifecycle:    util.NewRunLifecycle(name),
+		id:                pConsumer.Partition(),
+		topic:             pConsumer.Topic(),
+		sarama:            sarama,
+		pConsumer:         pConsumer,
+		decodeDLQMetadata: decodeMetadata,
+		options:           options,
+		msgCh:             msgCh,
+		dlq:               dlq,
+		tally:             scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		logger:            logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		stopC:             make(chan struct{}),
+		ackMgr:            newAckManager(maxUnAcked, scope, logger),
+		lifecycle:         util.NewRunLifecycle(name),
 	}
 }
 
@@ -130,15 +125,6 @@ func (p *partitionConsumer) messageLoop() {
 				return
 			}
 
-			if p.limit != noLimit && m.Offset > p.limit {
-				p.logger.With(
-					zap.Int64("limit", p.limit),
-					zap.Int64("offset", m.Offset),
-				).Info("partition consumer stopped because it reached limit")
-				atomic.CompareAndSwapInt32(&p.reachedLimit, 0, 1)
-				return
-			}
-
 			lag := time.Now().Sub(m.Timestamp)
 			p.tally.Gauge(metrics.KafkaPartitionLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
@@ -149,12 +135,6 @@ func (p *partitionConsumer) messageLoop() {
 			return
 		}
 	}
-}
-
-// ReachedLimit returns true if the limit has been reached.
-// If no limit is specified, then it always returns false.
-func (p *partitionConsumer) ReachedLimit() bool {
-	return atomic.LoadInt32(&p.reachedLimit) != 0
 }
 
 // commitLoop periodically checkpoints the offsets with broker
@@ -187,7 +167,7 @@ func (p *partitionConsumer) markOffset() {
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 	metadata := newDLQMetadata()
-	if p.decodeMetadata {
+	if p.decodeDLQMetadata {
 		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
 			p.logger.Fatal("unable to marshal dlq metadata from message key", zap.Error(err))
 			return
