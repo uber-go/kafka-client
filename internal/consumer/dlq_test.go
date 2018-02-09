@@ -202,7 +202,7 @@ type DLQMultiplexerTestSuite struct {
 	msg         *mockMessage
 	retry       *mockDLQProducer
 	dlq         *mockDLQProducer
-	multiplexer *retryDLQMultiplexer
+	multiplexer *dlqMultiplexer
 }
 
 func TestDLQMultiplexerTestSuite(t *testing.T) {
@@ -213,7 +213,7 @@ func (s *DLQMultiplexerTestSuite) SetupTest() {
 	s.msg = new(mockMessage)
 	s.retry = newMockDLQProducer()
 	s.dlq = newMockDLQProducer()
-	s.multiplexer = &retryDLQMultiplexer{
+	s.multiplexer = &dlqMultiplexer{
 		retryCountThreshold: 3,
 		retryTopic:          s.retry,
 		dlqTopic:            s.dlq,

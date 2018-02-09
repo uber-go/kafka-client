@@ -50,8 +50,10 @@ type (
 		Add(m kafka.Message) error
 	}
 
-	// retryDLQMultiplexer multiplexes an DLQ add between distinct Retry and DLQ topics
-	retryDLQMultiplexer struct {
+	// dlqMultiplexer is an implementation of DLQ which sends messages to a RetryQ for a configured number of times before
+	// sending messages to thq DLQ.
+	// Messages send to the RetryQ will be automatically reconsumed by the library.
+	dlqMultiplexer struct {
 		// retryCountThreshold is the threshold that is used to determine whether a message
 		// goes to retryTopic or dlqTopic
 		retryCountThreshold int64
@@ -202,7 +204,7 @@ func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan 
 // < the threshold.
 // Else, it will go to the dlqTopic.
 func NewRetryDLQMultiplexer(retryTopic, dlqTopic DLQ, threshold int64) DLQ {
-	return &retryDLQMultiplexer{
+	return &dlqMultiplexer{
 		retryCountThreshold: threshold,
 		retryTopic:          retryTopic,
 		dlqTopic:            dlqTopic,
@@ -214,7 +216,7 @@ func NewRetryDLQMultiplexer(retryTopic, dlqTopic DLQ, threshold int64) DLQ {
 // If the message RetryCount is greater than or equal to the retryCountTreshold in the multiplexer,
 // the message will be sent to the retry topic.
 // Else, it will be sent to the dlq topic.
-func (d *retryDLQMultiplexer) Add(m kafka.Message) error {
+func (d *dlqMultiplexer) Add(m kafka.Message) error {
 	if m.RetryCount() >= d.retryCountThreshold {
 		return d.dlqTopic.Add(m)
 	}
@@ -222,7 +224,7 @@ func (d *retryDLQMultiplexer) Add(m kafka.Message) error {
 }
 
 // Start retryDLQMultiplexer will start the retry and dlq buffered dlq producers.
-func (d *retryDLQMultiplexer) Start() error {
+func (d *dlqMultiplexer) Start() error {
 	if err := d.retryTopic.Start(); err != nil {
 		return err
 	}
@@ -234,7 +236,7 @@ func (d *retryDLQMultiplexer) Start() error {
 }
 
 // Stop closes the resources held by the retryTopic and dlqTopic.
-func (d *retryDLQMultiplexer) Stop() {
+func (d *dlqMultiplexer) Stop() {
 	d.dlqTopic.Stop()
 	d.retryTopic.Stop()
 }

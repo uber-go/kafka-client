@@ -41,19 +41,19 @@ type (
 	// partitionConsumer is the consumer for a specific
 	// kafka partition
 	partitionConsumer struct {
-		id                int32
-		topic             string
-		decodeDLQMetadata bool
-		msgCh             chan kafka.Message
-		ackMgr            *ackManager
-		sarama            SaramaConsumer
-		pConsumer         cluster.PartitionConsumer
-		dlq               DLQ
-		options           *Options
-		tally             tally.Scope
-		logger            *zap.Logger
-		stopC             chan struct{}
-		lifecycle         *util.RunLifecycle
+		TopicType
+		id        int32
+		topic     string
+		msgCh     chan kafka.Message
+		ackMgr    *ackManager
+		sarama    SaramaConsumer
+		pConsumer cluster.PartitionConsumer
+		dlq       DLQ
+		options   *Options
+		tally     tally.Scope
+		logger    *zap.Logger
+		stopC     chan struct{}
+		lifecycle *util.RunLifecycle
 	}
 )
 
@@ -62,7 +62,7 @@ type (
 func newPartitionConsumer(
 	sarama SaramaConsumer,
 	pConsumer cluster.PartitionConsumer,
-	decodeMetadata bool,
+	topicType TopicType,
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
@@ -71,19 +71,19 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	return &partitionConsumer{
-		id:                pConsumer.Partition(),
-		topic:             pConsumer.Topic(),
-		sarama:            sarama,
-		pConsumer:         pConsumer,
-		decodeDLQMetadata: decodeMetadata,
-		options:           options,
-		msgCh:             msgCh,
-		dlq:               dlq,
-		tally:             scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
-		logger:            logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
-		stopC:             make(chan struct{}),
-		ackMgr:            newAckManager(maxUnAcked, scope, logger),
-		lifecycle:         util.NewRunLifecycle(name),
+		id:        pConsumer.Partition(),
+		topic:     pConsumer.Topic(),
+		TopicType: topicType,
+		sarama:    sarama,
+		pConsumer: pConsumer,
+		options:   options,
+		msgCh:     msgCh,
+		dlq:       dlq,
+		tally:     scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		logger:    logger.With(zap.String("topic", pConsumer.Topic()), zap.Int32("partition", pConsumer.Partition())),
+		stopC:     make(chan struct{}),
+		ackMgr:    newAckManager(maxUnAcked, scope, logger),
+		lifecycle: util.NewRunLifecycle(name),
 	}
 }
 
@@ -167,7 +167,7 @@ func (p *partitionConsumer) markOffset() {
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 	metadata := newDLQMetadata()
-	if p.decodeDLQMetadata {
+	if p.TopicType == TopicTypeRetryQ || p.TopicType == TopicTypeDLQ {
 		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
 			p.logger.Fatal("unable to marshal dlq metadata from message key", zap.Error(err))
 			return

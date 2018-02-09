@@ -31,7 +31,7 @@ import (
 
 type (
 	consumerBuilder struct {
-		clusterTopicsMap         map[string][]topicConsumerBuilder
+		clusterTopicsMap         map[string][]consumer.Topic
 		clusterSaramaClientMap   map[string]sarama.Client
 		clusterSaramaConsumerMap map[string]consumer.SaramaConsumer
 		clusterTopicConsumerMap  map[string]map[string]*consumer.TopicConsumer
@@ -49,11 +49,6 @@ type (
 		saramaConfig        *sarama.Config
 		saramaClusterConfig *cluster.Config
 	}
-
-	topicConsumerBuilder struct {
-		kafka.ConsumerTopic
-		useDLQMetadata bool
-	}
 )
 
 func newConsumerBuilder(
@@ -65,7 +60,7 @@ func newConsumerBuilder(
 	consumerOptions := buildOptions(config, opts...)
 	saramaClusterConfig := buildSaramaConfig(consumerOptions)
 	return &consumerBuilder{
-		clusterTopicsMap:         make(map[string][]topicConsumerBuilder),
+		clusterTopicsMap:         make(map[string][]consumer.Topic),
 		clusterSaramaClientMap:   make(map[string]sarama.Client),
 		clusterSaramaConsumerMap: make(map[string]consumer.SaramaConsumer),
 		clusterTopicConsumerMap:  make(map[string]map[string]*consumer.TopicConsumer),
@@ -86,16 +81,16 @@ func newConsumerBuilder(
 	}
 }
 
-func (c *consumerBuilder) addTopicToClusterTopicsMap(topic topicConsumerBuilder) {
+func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic) {
 	topicList, ok := c.clusterTopicsMap[topic.Topic.Cluster]
 	if !ok {
-		topicList = make([]topicConsumerBuilder, 0, 10)
+		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
 	c.clusterTopicsMap[topic.Topic.Cluster] = topicList
 }
 
-func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []topicConsumerBuilder) []string {
+func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []consumer.Topic) []string {
 	output := make([]string, 0, len(topicList))
 	for _, topic := range topicList {
 		output = append(output, topic.Name)
@@ -106,8 +101,8 @@ func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []topicCons
 func (c *consumerBuilder) build() (kafka.Consumer, error) {
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
-		c.addTopicToClusterTopicsMap(topicConsumerBuilder{consumerTopic, false})
-		c.addTopicToClusterTopicsMap(topicConsumerBuilder{topicToRetryTopic(consumerTopic), true})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, TopicType: consumer.TopicTypeDefaultQ})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), TopicType: consumer.TopicTypeRetryQ})
 	}
 
 	// build cluster consumer
@@ -120,7 +115,7 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 
 		// build topic consumers
 		for _, topic := range topicList {
-			retry, err := c.getOrAddDLQ(topic.Retry)
+			retry, err := c.getOrAddDLQ(topic.RetryQ)
 			if err != nil {
 				c.close()
 				return nil, err
@@ -132,13 +127,12 @@ func (c *consumerBuilder) build() (kafka.Consumer, error) {
 				return nil, err
 			}
 
-			retryDLQMultiplexer := consumer.NewRetryDLQMultiplexer(retry, dlq, topic.RetryCount)
+			retryDLQMultiplexer := consumer.NewRetryDLQMultiplexer(retry, dlq, topic.MaxRetries)
 			topicConsumer := consumer.NewTopicConsumer(
-				topic.Name,
+				topic,
 				c.msgCh,
 				saramaConsumer,
 				retryDLQMultiplexer,
-				topic.useDLQMetadata,
 				c.options,
 				c.scope,
 				c.logger,
@@ -201,7 +195,7 @@ func (c *consumerBuilder) close() {
 	}
 }
 
-func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []topicConsumerBuilder) (consumer.SaramaConsumer, error) {
+func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []consumer.Topic) (consumer.SaramaConsumer, error) {
 	brokerList, err := c.resolver.ResolveIPForCluster(cluster)
 	if err != nil {
 		return nil, err
@@ -269,9 +263,9 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 
 func topicToRetryTopic(topic kafka.ConsumerTopic) kafka.ConsumerTopic {
 	return kafka.ConsumerTopic{
-		Topic:      topic.Retry,
-		Retry:      topic.Retry,
+		Topic:      topic.RetryQ,
+		RetryQ:     topic.RetryQ,
 		DLQ:        topic.DLQ,
-		RetryCount: topic.RetryCount,
+		MaxRetries: topic.MaxRetries,
 	}
 }

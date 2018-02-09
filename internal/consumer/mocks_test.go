@@ -246,6 +246,12 @@ func (m *mockPartitionedConsumer) isClosed() bool {
 	return atomic.LoadInt64(&m.closed) == 1
 }
 
+func (m *mockPartitionedConsumer) AsyncClose() {}
+
+func (m *mockPartitionedConsumer) Errors() <-chan *sarama.ConsumerError {
+	return nil
+}
+
 // Messages returns the read channel for the messages that are returned by
 // the broker.
 func (m *mockPartitionedConsumer) Messages() <-chan *sarama.ConsumerMessage {

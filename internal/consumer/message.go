@@ -67,14 +67,15 @@ func newMessage(scm *sarama.ConsumerMessage, ackID ackID, ackMgr *ackManager, dl
 }
 
 // Key is a mutable reference to the message's key
-func (m *Message) Key() []byte {
-	result := make([]byte, len(m.msg.Key))
+func (m *Message) Key() (key []byte) {
 	if m.metadata.Data != nil {
-		copy(result, m.metadata.Data)
+		key = make([]byte, len(m.metadata.Data))
+		copy(key, m.metadata.Data)
 	} else {
-		copy(result, m.msg.Key)
+		key = make([]byte, len(m.msg.Key))
+		copy(key, m.msg.Key)
 	}
-	return result
+	return
 }
 
 // Value is a mutable reference to the message's value
