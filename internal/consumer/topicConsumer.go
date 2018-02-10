@@ -34,7 +34,7 @@ type (
 	// TopicConsumer is an abstraction that runs on the same
 	// goroutine as the cluster consumer.
 	TopicConsumer struct {
-		topic                string
+		topic                Topic
 		msgC                 chan kafka.Message
 		partitionConsumerMap map[int32]*partitionConsumer
 		dlq                  DLQ
@@ -47,7 +47,7 @@ type (
 
 // NewTopicConsumer returns a new TopicConsumer for consuming from a single topic.
 func NewTopicConsumer(
-	topic string,
+	topic Topic,
 	msgC chan kafka.Message,
 	consumer SaramaConsumer,
 	dlq DLQ,
@@ -65,11 +65,6 @@ func NewTopicConsumer(
 		scope:                scope,
 		logger:               logger,
 	}
-}
-
-// Topic returns the topic that this TopicConsumer is responsible for.
-func (c *TopicConsumer) Topic() string {
-	return c.topic
 }
 
 // Start the DLQ consumer goroutine.
@@ -92,8 +87,7 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 		delete(c.partitionConsumerMap, partition)
 	}
 	c.logger.Info("new partition consumer", zap.Int32("partition", partition))
-	// TODO (gteo): fix limiter
-	p := newPartitionConsumer(c.saramaConsumer, pc, noLimit, c.options, c.msgC, c.dlq, c.scope, c.logger)
+	p := newPartitionConsumer(c.saramaConsumer, pc, c.topic.TopicType, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()
 }

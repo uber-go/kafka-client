@@ -50,6 +50,21 @@ type (
 		Add(m kafka.Message) error
 	}
 
+	// dlqMultiplexer is an implementation of DLQ which sends messages to a RetryQ for a configured number of times before
+	// sending messages to thq DLQ.
+	// Messages send to the RetryQ will be automatically reconsumed by the library.
+	dlqMultiplexer struct {
+		// retryCountThreshold is the threshold that is used to determine whether a message
+		// goes to retryTopic or dlqTopic
+		retryCountThreshold int64
+		// retryTopic is topic that acts as a retry queue.
+		// messages with retry count < the retry count threshold in the multiplexer will be sent to this topic.
+		retryTopic DLQ
+		// dlqTopic is topic that acts as a dead letter queue.
+		// messages with retry count >= the retry count threshold in the multiplexer will be sent to this topic.
+		dlqTopic DLQ
+	}
+
 	// bufferedErrorTopic is a client side abstraction for an error topic on the Kafka cluster.
 	// This library uses the error topic as a base abstraction for retry and dlq topics.
 	//
@@ -180,4 +195,48 @@ func (d *bufferedErrorTopic) newSaramaMessage(key, value []byte, responseC chan 
 		Value:    sarama.ByteEncoder(value),
 		Metadata: responseC,
 	}
+}
+
+// NewRetryDLQMultiplexer returns a DLQ that will produce messages to retryTopic or dlqTopic depending on
+// the threshold.
+//
+// Messages that are added to this DLQ will be sent to retryTopic if the retry count of the message is
+// < the threshold.
+// Else, it will go to the dlqTopic.
+func NewRetryDLQMultiplexer(retryTopic, dlqTopic DLQ, threshold int64) DLQ {
+	return &dlqMultiplexer{
+		retryCountThreshold: threshold,
+		retryTopic:          retryTopic,
+		dlqTopic:            dlqTopic,
+	}
+}
+
+// Add sends a kafka message to the retry topic or dlq topic depending on the retry count in the message.
+//
+// If the message RetryCount is greater than or equal to the retryCountTreshold in the multiplexer,
+// the message will be sent to the retry topic.
+// Else, it will be sent to the dlq topic.
+func (d *dlqMultiplexer) Add(m kafka.Message) error {
+	if m.RetryCount() >= d.retryCountThreshold {
+		return d.dlqTopic.Add(m)
+	}
+	return d.retryTopic.Add(m)
+}
+
+// Start retryDLQMultiplexer will start the retry and dlq buffered dlq producers.
+func (d *dlqMultiplexer) Start() error {
+	if err := d.retryTopic.Start(); err != nil {
+		return err
+	}
+	if err := d.dlqTopic.Start(); err != nil {
+		d.retryTopic.Stop()
+		return err
+	}
+	return nil
+}
+
+// Stop closes the resources held by the retryTopic and dlqTopic.
+func (d *dlqMultiplexer) Stop() {
+	d.dlqTopic.Stop()
+	d.retryTopic.Stop()
 }

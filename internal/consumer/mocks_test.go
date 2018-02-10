@@ -57,7 +57,6 @@ type (
 	mockSaramaClient struct {
 		closed int32
 	}
-
 	mockSaramaProducer struct {
 		closed   int32
 		inputC   chan *sarama.ProducerMessage
@@ -245,6 +244,12 @@ func (m *mockPartitionedConsumer) Close() error {
 
 func (m *mockPartitionedConsumer) isClosed() bool {
 	return atomic.LoadInt64(&m.closed) == 1
+}
+
+func (m *mockPartitionedConsumer) AsyncClose() {}
+
+func (m *mockPartitionedConsumer) Errors() <-chan *sarama.ConsumerError {
+	return nil
 }
 
 // Messages returns the read channel for the messages that are returned by

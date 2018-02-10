@@ -24,6 +24,16 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
+	"github.com/uber-go/kafka-client/kafka"
+)
+
+const (
+	// TopicTypeDefaultQ is an enum for a consumer that reads from a the default/original topic.
+	TopicTypeDefaultQ TopicType = iota + 1
+	// TopicTypeRetryQ is a enum for a consumer that reads from a RetryQ topic.
+	TopicTypeRetryQ
+	// TopicTypeDLQ is a enum for a consumer that reads from a DLQ topic.
+	TopicTypeDLQ
 )
 
 type (
@@ -66,6 +76,15 @@ type (
 		NewSaramaProducer func(sarama.Client) (sarama.AsyncProducer, error)
 		NewSaramaConsumer func([]string, string, []string, *cluster.Config) (SaramaConsumer, error)
 		NewSaramaClient   func([]string, *sarama.Config) (sarama.Client, error)
+	}
+
+	// TopicType is an enum for the type of topic: TopicTypeDefaultQ, TopicTypeRetryQ, TopicTypeDLQ.
+	TopicType int
+
+	// Topic is an internal wrapper around kafka.ConsumerTopic
+	Topic struct {
+		kafka.ConsumerTopic
+		TopicType
 	}
 )
 
