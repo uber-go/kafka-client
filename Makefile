@@ -37,7 +37,7 @@ endif
 VET_RULES := -printf=false
 
 .PHONY: lint
-lint:
+lint: dependencies
 ifdef SHOULD_LINT
 	@rm -rf lint.log
 	@echo "Checking formatting..."
