@@ -1,8 +1,8 @@
-hash: bdd8a40f22809fd4072ebd73def44653df40eaca26a833cca39f4f93e35ba858
-updated: 2018-01-31T13:31:28.633174-08:00
+hash: 8c4bed9db9f5629919b9f75f736dc3edbc121197e9f497c3568f760dd7c72e83
+updated: 2018-02-13T14:03:46.42337-08:00
 imports:
 - name: github.com/bsm/sarama-cluster
-  version: abf039439f66c1ce78017f560b490612552f6472
+  version: 3001c2453136632aa3219a58ea3795bb584b83b5
 - name: github.com/davecgh/go-spew
   version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
   subpackages:
@@ -18,7 +18,7 @@ imports:
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/golang/protobuf
-  version: 1e59b77b52bf8e4b449a57e6f79f21226d571845
+  version: 925541529c1fa6821df4e44ce2723319eb2be768
   subpackages:
   - proto
 - name: github.com/golang/snappy
@@ -32,7 +32,7 @@ imports:
 - name: github.com/rcrowley/go-metrics
   version: eeba7bd0dd01ace6e690fa833b3f22aaec29af43
 - name: github.com/Shopify/sarama
-  version: 3b1b38866a79f06deddf0487d5c27ba0697ccd65
+  version: f7be6aa2bc7b2e38edf816b08b582782194a1c02
 - name: github.com/uber-go/tally
   version: 6c4631652c6aab57c64f65c2e0aaec2e9aae3a64
 - name: go.uber.org/atomic
@@ -48,14 +48,6 @@ imports:
   - internal/exit
   - zapcore
 testImports:
-- name: github.com/axw/gocov
-  version: 3a69a0d2a4ef1f263e2d92b041a69593d6964fe8
-- name: github.com/golang/lint
-  version: e14d9b0f1d332b1420c1ffa32562ad2dc84d645d
-  subpackages:
-  - golint
-- name: github.com/mattn/goveralls
-  version: b71a1e4855f87991aff01c2c833a75a07059c61c
 - name: github.com/pmezard/go-difflib
   version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
   subpackages:
