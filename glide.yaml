@@ -6,8 +6,11 @@ import:
 - package: github.com/uber-go/tally
   version: ^3
 - package: github.com/Shopify/sarama
-  version: ^1.13.0
+  version: ^1
 - package: github.com/bsm/sarama-cluster
+  version: ^2
+- package: github.com/golang/protobuf
+  version: ^1
 testImport:
 - package: github.com/stretchr/testify
   subpackages:
