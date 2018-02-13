@@ -58,14 +58,14 @@ else
 endif
 
 .PHONY: test
-test:
+test: dependencies
 	go test $(PKGS)
 
 .PHONY: cover
-cover:
+cover: dependencies
 	./scripts/cover.sh $(PKGS)
 
 .PHONY: bench
 BENCH ?= .
-bench:
+bench: dependencies
 	@$(foreach pkg,$(PKGS),go test -bench=$(BENCH) -run="^$$" $(BENCH_FLAGS) $(pkg);)
