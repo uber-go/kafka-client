@@ -34,7 +34,7 @@ import (
 
 var (
 	errShutdown = errors.New("error consumer shutdown")
-	errNoDLQ = errors.New("no persistent dlq configured")
+	errNoDLQ    = errors.New("no persistent dlq configured")
 )
 
 type (
@@ -83,7 +83,7 @@ type (
 		lifecycle *util.RunLifecycle
 	}
 
-	noopDLQ struct {}
+	noopDLQ struct{}
 )
 
 // NewBufferedDLQ returns a DLQ that is backed by a buffered async sarama producer.
@@ -257,4 +257,3 @@ func (d noopDLQ) Stop() {}
 func (d noopDLQ) Add(m kafka.Message) error {
 	return errNoDLQ
 }
-
