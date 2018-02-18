@@ -94,8 +94,8 @@ type (
 	}
 )
 
-// NewConfig returns ConsumerConfig with sane defaults.
-func NewConfig(groupName string, topicList ConsumerTopicList) *ConsumerConfig {
+// NewConsumerConfig returns ConsumerConfig with sane defaults.
+func NewConsumerConfig(groupName string, topicList ConsumerTopicList) *ConsumerConfig {
 	cfg := new(ConsumerConfig)
 	cfg.GroupName = groupName
 	cfg.TopicList = topicList

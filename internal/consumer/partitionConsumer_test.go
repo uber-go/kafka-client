@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	testWaitDuration = 10 * time.Millisecond
+	testWaitDuration = 2 * time.Second
 )
 
 type RangePartitionConsumerTestSuite struct {
@@ -79,12 +79,11 @@ func (s *RangePartitionConsumerTestSuite) TestOffsetNotificationTriggersMessageC
 	s.saramaPartitionConsumer.sendMsg(93)  // this message should be ignored b/c it is larger than HighOffset of OffsetRange
 
 	// set offset range to 100-100, so receive one message
-	s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 100, HighOffset: 100})
+	s.NoError(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 100, HighOffset: 100}))
 	select {
 	case msg := <-s.msgC:
 		s.EqualValues(100, msg.Offset())
 		msg.Ack()
-		break
 	case <-time.After(testWaitDuration):
 		s.Fail("expected message 100")
 	}
@@ -93,7 +92,7 @@ func (s *RangePartitionConsumerTestSuite) TestOffsetNotificationTriggersMessageC
 	s.EqualValues(100, s.rangePartitionConsumer.ackMgr.CommitLevel())
 
 	// Trigger reset offset
-	s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 91, HighOffset: 92})
+	s.NoError(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 91, HighOffset: 92}))
 	for i := 0; i < 2; i++ {
 		select {
 		case msg := <-s.msgC:

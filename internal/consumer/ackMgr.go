@@ -31,6 +31,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	resetCheckInterval = time.Second
+)
+
 type (
 	ackID struct {
 		listAddr list.Address
@@ -133,8 +137,9 @@ func (mgr *ackManager) CommitLevel() int64 {
 	return unacked - 1
 }
 
-func (mgr *ackManager) Reset() <-chan struct{} {
-	return mgr.unackedSeqList.Reset()
+// Reset blocks until the list is empty and the offsets have been reset.
+func (mgr *ackManager) Reset() {
+	mgr.unackedSeqList.Reset()
 }
 
 // newAckID returns a an ackID with the given params
@@ -200,9 +205,10 @@ func (l *threadSafeSortedList) Add(value int64) (list.Address, error) {
 	return addr, err
 }
 
-func (l *threadSafeSortedList) Reset() <-chan struct{} {
+// Reset blocks until the list is empty then sets lastValue to -1.
+func (l *threadSafeSortedList) Reset() {
 	doneC := make(chan struct{})
-	checkInterval := time.NewTicker(time.Millisecond)
+	checkInterval := time.NewTicker(resetCheckInterval)
 	go func() {
 		for {
 			select {
@@ -218,5 +224,5 @@ func (l *threadSafeSortedList) Reset() <-chan struct{} {
 			}
 		}
 	}()
-	return doneC
+	<-doneC // block until the list is reset
 }

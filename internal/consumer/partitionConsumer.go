@@ -81,8 +81,13 @@ type (
 		lifecycle      *util.RunLifecycle
 	}
 
+	// rangePartitionConsumer consumes only a specific offset range.
+	// Only a single offset range can be consumed at a single time.
+	// If an offset range is currently being consumed, calls to ResetOffset
+	// will block until all messages in the previous offset range has been received
+	// and acked/nacked.
 	rangePartitionConsumer struct {
-		partitionConsumer
+		*partitionConsumer
 		offsetRange  *kafka.OffsetRange
 		offsetRangeC chan kafka.OffsetRange
 	}
@@ -171,7 +176,7 @@ func NewRangePartitionConsumer(
 
 func newRangePartitionConsumer(consumer *partitionConsumer) *rangePartitionConsumer {
 	return &rangePartitionConsumer{
-		partitionConsumer: *consumer,
+		partitionConsumer: consumer,
 		offsetRange:       nil,
 		offsetRangeC:      make(chan kafka.OffsetRange),
 	}
@@ -292,6 +297,7 @@ func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 
 	ackID, err := p.trackOffset(scm.Offset)
 	if err != nil {
+		p.logger.Error("failed to track offset for message", zap.Error(err))
 		return
 	}
 
@@ -368,7 +374,7 @@ func (p *rangePartitionConsumer) offsetLoop() {
 				return
 			}
 			p.logger.Debug("range partition consumer ack mgr reset started", zap.Object("offsetRange", ntf))
-			<-p.ackMgr.Reset()
+			p.ackMgr.Reset() // Reset blocks until all messages that are currently inflight have been acked/nacked.
 			p.sarama.ResetPartitionOffset(p.topicPartition.Name, p.topicPartition.partition, ntf.LowOffset-1, "")
 			p.logger.Debug("range partition consumer ack mgr reset completed", zap.Object("offsetRange", ntf))
 			p.messageLoop(&ntf)

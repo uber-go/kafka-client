@@ -58,7 +58,7 @@ func TestConsumerBuilderTestSuite(t *testing.T) {
 }
 
 func (s *ConsumerBuilderTestSuite) SetupTest() {
-	s.config = kafka.NewConfig("consumergroup", []kafka.ConsumerTopic{
+	s.config = kafka.NewConsumerConfig("consumergroup", []kafka.ConsumerTopic{
 		{
 			Topic: kafka.Topic{
 				Name:    "topic",
