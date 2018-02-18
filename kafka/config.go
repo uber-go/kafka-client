@@ -48,8 +48,6 @@ type (
 	}
 
 	// ConsumerTopic contains information for a consumer topic.
-	// Consumer topics has contains two Topics:
-	// the topic to consume from and the DLQ topic to send nacked messages to.
 	ConsumerTopic struct {
 		Topic
 		RetryQ     Topic

@@ -109,6 +109,11 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), TopicType: consumer.TopicTypeDLQ, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
 	}
 
+	// Add additional topics that may have been injected from WithRangeConsumer option.
+	for _, topic := range c.options.RangeConsumerTopics {
+		c.addTopicToClusterTopicsMap(topic)
+	}
+
 	// build cluster consumer
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
