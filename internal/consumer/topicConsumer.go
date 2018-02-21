@@ -21,7 +21,6 @@
 package consumer
 
 import (
-	"errors"
 	"sync"
 
 	"github.com/bsm/sarama-cluster"

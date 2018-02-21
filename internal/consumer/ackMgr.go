@@ -29,7 +29,6 @@ import (
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
