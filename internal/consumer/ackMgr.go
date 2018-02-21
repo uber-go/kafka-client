@@ -29,6 +29,7 @@ import (
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -225,4 +226,5 @@ func (l *threadSafeSortedList) Reset() {
 		}
 	}()
 	<-doneC // block until the list is reset
+	checkInterval.Stop()
 }

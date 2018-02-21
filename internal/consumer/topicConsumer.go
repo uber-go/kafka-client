@@ -119,7 +119,8 @@ func (c *TopicConsumer) shutdown() {
 func (c *TopicConsumer) ResetOffset(partition int32, offsetRange kafka.OffsetRange) error {
 	pc, ok := c.partitionConsumerMap[partition]
 	if !ok {
-		return errors.New("no partition consumer found")
+		c.logger.Warn("no partition consumer found")
+		return nil
 	}
 
 	return pc.ResetOffset(offsetRange)
