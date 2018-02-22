@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/bsm/sarama-cluster"
+	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -55,6 +56,11 @@ func NewTopicConsumer(
 	scope tally.Scope,
 	logger *zap.Logger,
 ) *TopicConsumer {
+	logger = logger.With(
+		zap.String("topic", topic.Name),
+		zap.String("cluster", topic.Cluster),
+	)
+	scope = scope.Tagged(map[string]string{"topic": topic.Name, "cluster": topic.Cluster})
 	return &TopicConsumer{
 		topic:                topic,
 		msgC:                 msgC,
@@ -86,7 +92,6 @@ func (c *TopicConsumer) Stop() {
 
 func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 	partition := pc.Partition()
-
 	old, ok := c.partitionConsumerMap[partition]
 	if ok {
 		old.Stop()
@@ -96,6 +101,7 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 	p := c.topic.PartitionConsumerFactory(c.topic, c.saramaConsumer, pc, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()
+	c.scope.Gauge(metrics.KafkaPartitionOwned).Update(float64(len(c.partitionConsumerMap)))
 }
 
 func (c *TopicConsumer) shutdown() {

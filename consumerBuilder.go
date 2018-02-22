@@ -65,8 +65,8 @@ func newConsumerBuilder(
 		clusterSaramaConsumerMap:      make(map[string]consumer.SaramaConsumer),
 		clusterTopicSaramaProducerMap: make(map[string]map[string]sarama.AsyncProducer),
 		msgCh:  make(chan kafka.Message, consumerOptions.RcvBufferSize),
-		logger: logger,
-		scope:  scope,
+		logger: logger.With(zap.String("consumergroup", config.GroupName)),
+		scope:  scope.Tagged(map[string]string{"consumergroup": config.GroupName}),
 		constructors: consumer.Constructors{
 			NewSaramaConsumer: consumer.NewSaramaConsumer,
 			NewSaramaProducer: consumer.NewSaramaProducer,

@@ -22,23 +22,33 @@ package metrics
 
 // Counters
 const (
-	KafkaPartitionStarted        = "kafka.partition.started"
-	KafkaPartitionStopped        = "kafka.partition.stopped"
-	KafkaPartitionMessagesIn     = "kafka.partition.messages-in"
-	KafkaPartitionAckMgrDups     = "kafka.partition.duplicates"
-	KafkaPartitionAckMgrSkipped  = "kafka.partition.skipped"
+	KafkaConsumerStarted = "kafka.consumer.started"
+	KafkaConsumerStopped = "kafka.consumer.stopped"
+
+	KafkaPartitionStarted    = "kafka.partition.started"
+	KafkaPartitionStopped    = "kafka.partition.stopped"
+	KafkaPartitionMessagesIn = "kafka.partition.messages-in"
+
+	KafkaDLQStarted       = "kafka.dlq.started"
+	KafkaDLQStopped       = "kafka.dlq.stopped"
+	KafkaDLQMessagesOut   = "kafka.dlq.messages-out"
+	KafkaDLQErrors        = "kafka.dlq.errors"
+	KafkaDLQMetadataError = "kafka.dlq.metadata-errors"
+
+	KafkaPartitionAckMgrDups     = "kafka.partition.ackmgr.duplicates"
+	KafkaPartitionAckMgrSkipped  = "kafka.partition.ackmgr.skipped"
 	KafkaPartitionAckMgrListFull = "kafka.partition.ackmgr.list-full-errors"
-	KafkaPartitionGetAckIDErrors = "kafka.partition.get-ackid-errors"
-	KafkaPartitionAckErrors      = "kafka.partition.ack-errors"
+	KafkaPartitionGetAckIDErrors = "kafka.partition.ackmgr.get-ackid-errors"
+	KafkaPartitionAckErrors      = "kafka.partition.ackmgr.ack-errors"
 	KafkaPartitionNacks          = "kafka.partition.nacks"
-	KafkaConsumerStarted         = "kafka.consumer.started"
-	KafkaConsumerStopped         = "kafka.consumer.stopped"
+	KafkaPartitionRebalance      = "kafka.partition.rebalance"
 )
 
 // Gauges
 const (
-	KafkaPartitionLag          = "kafka.partition.lag"
-	KafkaPartitionBacklog      = "kafka.partition.backlog"
+	KafkaPartitionTimeLag      = "kafka.partition.time-lag"
+	KafkaPartitionOffsetLag    = "kafka.partition.offset-lag"
 	KafkaPartitionReadOffset   = "kafka.partition.read-offset"
 	KafkaPartitionCommitOffset = "kafka.partition.commit-offset"
+	KafkaPartitionOwned        = "kafka.partition.owned"
 )

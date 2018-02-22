@@ -26,6 +26,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -92,6 +93,11 @@ func NewBufferedDLQ(topic kafka.Topic, producer sarama.AsyncProducer, scope tall
 }
 
 func newBufferedDLQ(topic kafka.Topic, producer sarama.AsyncProducer, scope tally.Scope, logger *zap.Logger) *bufferedErrorTopic {
+	scope = scope.Tagged(map[string]string{"topic": topic.Name, "cluster": topic.Cluster})
+	logger = logger.With(
+		zap.String("topic", topic.Name),
+		zap.String("cluster", topic.Cluster),
+	)
 	return &bufferedErrorTopic{
 		topic:     topic,
 		producer:  producer,
@@ -107,6 +113,7 @@ func (d *bufferedErrorTopic) Start() error {
 	return d.lifecycle.Start(func() error {
 		go d.asyncProducerResponseLoop()
 		d.logger.Info("DLQ started")
+		d.scope.Counter(metrics.KafkaDLQStarted).Inc(1)
 		return nil
 	})
 }
@@ -117,6 +124,7 @@ func (d *bufferedErrorTopic) Stop() {
 		d.producer.Close()
 		<-d.doneC
 		d.logger.Info("DLQ stopped")
+		d.scope.Counter(metrics.KafkaDLQStopped).Inc(1)
 	})
 }
 
@@ -132,6 +140,8 @@ func (d *bufferedErrorTopic) Add(m kafka.Message) error {
 
 	key, err := proto.Marshal(metadata)
 	if err != nil {
+		d.logger.Error("failed to encode DLQ metadata", zap.Error(err))
+		d.scope.Counter(metrics.KafkaDLQMetadataError).Inc(1)
 		return err
 	}
 	value := m.Value()
@@ -146,7 +156,11 @@ func (d *bufferedErrorTopic) Add(m kafka.Message) error {
 	}
 	select {
 	case err := <-responseC: // block until response is received
-		// TODO (gteo): add metrics here
+		if err == nil {
+			d.scope.Counter(metrics.KafkaDLQMessagesOut).Inc(1)
+		} else {
+			d.scope.Counter(metrics.KafkaDLQErrors).Inc(1)
+		}
 		return err
 	case <-d.stopC:
 		return errShutdown

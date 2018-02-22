@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Shopify/sarama"
+	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -99,6 +100,7 @@ func (c *MultiClusterConsumer) Start() error {
 		return err
 	}
 	c.logger.Info("multicluster consumer started", zap.String("groupName", c.groupName), zap.Array("topicList", c.topics))
+	c.scope.Counter(metrics.KafkaConsumerStarted).Inc(1)
 	return nil
 }
 
@@ -113,6 +115,7 @@ func (c *MultiClusterConsumer) Stop() {
 		}
 		close(c.doneC)
 		c.logger.Info("multicluster consumer stopped", zap.String("groupName", c.groupName), zap.Array("topicList", c.topics))
+		c.scope.Counter(metrics.KafkaConsumerStopped).Inc(1)
 	})
 }
 

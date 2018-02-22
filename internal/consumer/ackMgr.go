@@ -100,7 +100,10 @@ func (mgr *ackManager) GetAckID(msgSeq int64) (ackID, error) {
 	addr, err := mgr.unackedSeqList.Add(msgSeq)
 	if err != nil {
 		mgr.tally.Counter(metrics.KafkaPartitionGetAckIDErrors)
-		mgr.logger.Error("GetAckID() error", zap.Int64("rcvdSeq", msgSeq), zap.Error(err))
+		if err != list.ErrCapacity {
+			// list.ErrCapacity is handled gracefully so no need to log error.
+			mgr.logger.Error("GetAckID() error", zap.Int64("rcvdSeq", msgSeq), zap.Error(err))
+		}
 		return ackID{}, err
 	}
 	return newAckID(addr, msgSeq), nil
