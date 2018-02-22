@@ -41,6 +41,7 @@ const (
 	KafkaPartitionGetAckIDErrors = "kafka.partition.ackmgr.get-ackid-errors"
 	KafkaPartitionAckErrors      = "kafka.partition.ackmgr.ack-errors"
 	KafkaPartitionNacks          = "kafka.partition.nacks"
+	KafkaPartitionRebalance      = "kafka.partition.rebalance"
 )
 
 // Gauges
@@ -49,4 +50,5 @@ const (
 	KafkaPartitionOffsetLag    = "kafka.partition.offset-lag"
 	KafkaPartitionReadOffset   = "kafka.partition.read-offset"
 	KafkaPartitionCommitOffset = "kafka.partition.commit-offset"
+	KafkaPartitionOwned        = "kafka.partition.owned"
 )

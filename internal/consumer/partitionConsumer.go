@@ -131,7 +131,7 @@ func newPartitionConsumer(
 	dlq DLQ,
 	scope tally.Scope,
 	logger *zap.Logger) *partitionConsumer {
-	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
+	maxUnAcked := options.Concurrency + options.RcvBufferSize + 2
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	scope = scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))})
 	return &partitionConsumer{
