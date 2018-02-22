@@ -55,6 +55,11 @@ func NewTopicConsumer(
 	scope tally.Scope,
 	logger *zap.Logger,
 ) *TopicConsumer {
+	logger = logger.With(
+		zap.String("topic", topic.Name),
+		zap.String("cluster", topic.Cluster),
+	)
+	scope = scope.Tagged(map[string]string{"topic": topic.Name, "cluster": topic.Cluster})
 	return &TopicConsumer{
 		topic:                topic,
 		msgC:                 msgC,

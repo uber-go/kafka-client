@@ -60,7 +60,7 @@ func NewClusterConsumer(
 		cluster:          cluster,
 		consumer:         saramaConsumer,
 		topicConsumerMap: consumerMap,
-		scope:            scope,
+		scope:            scope.Tagged(map[string]string{"cluster": cluster}),
 		logger:           logger.With(zap.String("cluster", cluster)),
 		lifecycle:        util.NewRunLifecycle(cluster + "-consumer"),
 		stopC:            make(chan struct{}),

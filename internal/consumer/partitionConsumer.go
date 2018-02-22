@@ -133,6 +133,7 @@ func newPartitionConsumer(
 	logger *zap.Logger) *partitionConsumer {
 	maxUnAcked := options.Concurrency + options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
+	scope = scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))})
 	return &partitionConsumer{
 		topicPartition: topicPartition{
 			partition: pConsumer.Partition(),
@@ -143,7 +144,7 @@ func newPartitionConsumer(
 		options:   options,
 		msgCh:     msgCh,
 		dlq:       dlq,
-		tally:     scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))}),
+		tally:     scope,
 		logger:    logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
 		stopC:     make(chan struct{}),
 		ackMgr:    newAckManager(maxUnAcked, scope, logger),
@@ -240,7 +241,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			drain = false
 
 			lag := time.Now().Sub(m.Timestamp)
-			p.tally.Gauge(metrics.KafkaPartitionLag).Update(float64(lag))
+			p.tally.Gauge(metrics.KafkaPartitionTimeLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
 			p.tally.Counter(metrics.KafkaPartitionMessagesIn).Inc(1)
 			p.deliver(m)
@@ -280,7 +281,7 @@ func (p *partitionConsumer) markOffset() {
 		p.sarama.MarkPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, latestOff, "")
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
-		p.tally.Gauge(metrics.KafkaPartitionBacklog).Update(backlog)
+		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
 		p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
