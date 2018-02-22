@@ -21,11 +21,14 @@
 package consumer
 
 import (
+	"errors"
+	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"strings"
 )
 
 type (
@@ -73,8 +76,8 @@ func (c *MultiClusterConsumer) Name() string {
 }
 
 // Topics returns a list of topics this consumer is consuming from.
-func (c *MultiClusterConsumer) Topics() []string {
-	return c.topics.TopicNames()
+func (c *MultiClusterConsumer) Topics() kafka.ConsumerTopicList {
+	return c.topics
 }
 
 // Start will fail to start if there is any clusterConsumer that fails.
@@ -85,7 +88,7 @@ func (c *MultiClusterConsumer) Start() error {
 				c.logger.With(
 					zap.Error(err),
 					zap.String("cluster", clusterName),
-				).Error("failed to start cluster consumer")
+				).Error("multicluster consumer start error")
 				return
 			}
 		}
@@ -93,8 +96,10 @@ func (c *MultiClusterConsumer) Start() error {
 	})
 	if err != nil {
 		c.Stop()
+		return err
 	}
-	return err
+	c.logger.Info("multicluster consumer started", zap.String("groupName", c.groupName), zap.Array("topicList", c.topics))
+	return nil
 }
 
 // Stop will stop the consumer.
@@ -107,6 +112,7 @@ func (c *MultiClusterConsumer) Stop() {
 			client.Close()
 		}
 		close(c.doneC)
+		c.logger.Info("multicluster consumer stopped", zap.String("groupName", c.groupName), zap.Array("topicList", c.topics))
 	})
 }
 
@@ -118,4 +124,28 @@ func (c *MultiClusterConsumer) Closed() <-chan struct{} {
 // Messages returns a channel to receive messages on.
 func (c *MultiClusterConsumer) Messages() <-chan kafka.Message {
 	return c.msgC
+}
+
+// ResetOffset will reset the consumer offset for the specified cluster, topic, partition.
+func (c *MultiClusterConsumer) ResetOffset(cluster, topic string, partition int32, offsetRange kafka.OffsetRange) error {
+	cc, ok := c.clusterConsumerMap[cluster]
+	if !ok {
+		return errors.New("no cluster consumer found")
+	}
+	return cc.ResetOffset(topic, partition, offsetRange)
+}
+
+// MergeDLQ will merge the offset range for each partition of the DLQ topic for the specified ConsumerTopic.
+func (c *MultiClusterConsumer) MergeDLQ(topic kafka.ConsumerTopic, offsetRanges map[int32]kafka.OffsetRange) error {
+	errList := make([]string, 0, 10)
+	for partition, offsetRange := range offsetRanges {
+		if err := c.ResetOffset(topic.DLQ.Cluster, topic.DLQ.Name, partition, offsetRange); err != nil {
+			errList = append(errList, fmt.Sprintf("partition=%d err=%s", partition, err))
+		}
+	}
+
+	if len(errList) == 0 {
+		return nil
+	}
+	return fmt.Errorf("DLQ merge failed for %s", strings.Join(errList, ","))
 }

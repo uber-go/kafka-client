@@ -23,11 +23,16 @@ package consumer
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/uber-go/kafka-client/internal/list"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+)
+
+const (
+	resetCheckInterval = time.Second
 )
 
 type (
@@ -116,7 +121,6 @@ func (mgr *ackManager) Ack(id ackID) {
 func (mgr *ackManager) Nack(id ackID) {
 	mgr.Ack(id)
 	mgr.tally.Counter(metrics.KafkaPartitionNacks)
-	mgr.logger.Error("ackmgr received nack", zap.Int64("seq", id.msgSeq))
 }
 
 // CommitLevel returns the seqNum that can be
@@ -131,6 +135,11 @@ func (mgr *ackManager) CommitLevel() int64 {
 		return mgr.unackedSeqList.LastValue()
 	}
 	return unacked - 1
+}
+
+// Reset blocks until the list is empty and the offsets have been reset.
+func (mgr *ackManager) Reset() {
+	mgr.unackedSeqList.Reset()
 }
 
 // newAckID returns a an ackID with the given params
@@ -194,4 +203,27 @@ func (l *threadSafeSortedList) Add(value int64) (list.Address, error) {
 		l.lastValue = value
 	}
 	return addr, err
+}
+
+// Reset blocks until the list is empty then sets lastValue to -1.
+func (l *threadSafeSortedList) Reset() {
+	doneC := make(chan struct{})
+	checkInterval := time.NewTicker(resetCheckInterval)
+	go func() {
+		for {
+			select {
+			case <-checkInterval.C:
+				l.Lock()
+				if l.list.Empty() {
+					l.lastValue = -1
+					close(doneC)
+				}
+				l.Unlock()
+			case <-doneC:
+				return
+			}
+		}
+	}()
+	<-doneC // block until the list is reset
+	checkInterval.Stop()
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -48,6 +49,7 @@ type (
 		HighWaterMarks() map[string]map[int32]int64
 		MarkOffset(msg *sarama.ConsumerMessage, metadata string)
 		MarkPartitionOffset(topic string, partition int32, offset int64, metadata string)
+		ResetPartitionOffset(topic string, partition int32, offset int64, metadata string)
 	}
 
 	// saramaConsumer is an internal version of SaramaConsumer that implements a close method that can be safely called
@@ -85,8 +87,30 @@ type (
 	Topic struct {
 		kafka.ConsumerTopic
 		TopicType
+		PartitionConsumerFactory
 	}
 )
+
+// String converts the TopicType enum to a human readable string.
+func (t TopicType) String() string {
+	switch t {
+	case TopicTypeDefaultQ:
+		return "defaultQ"
+	case TopicTypeRetryQ:
+		return "retryQ"
+	case TopicTypeDLQ:
+		return "DLQ"
+	default:
+		return "invalid"
+	}
+}
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (t Topic) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	t.ConsumerTopic.MarshalLogObject(e)
+	e.AddString("topicType", t.TopicType.String())
+	return nil
+}
 
 // NewSaramaConsumer returns a new SaramaConsumer that has a Close method that can be called multiple times.
 func NewSaramaConsumer(brokers []string, groupID string, topics []string, config *cluster.Config) (SaramaConsumer, error) {

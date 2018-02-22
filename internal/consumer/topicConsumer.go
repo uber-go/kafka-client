@@ -36,9 +36,9 @@ type (
 	TopicConsumer struct {
 		topic                Topic
 		msgC                 chan kafka.Message
-		partitionConsumerMap map[int32]*partitionConsumer
+		partitionConsumerMap map[int32]PartitionConsumer
 		dlq                  DLQ
-		saramaConsumer       SaramaConsumer // SaramaConsumer is a shared resource that is owned by clusterConsumer.
+		saramaConsumer       SaramaConsumer // SaramaConsumer is a shared resource that is owned by ClusterConsumer.
 		options              *Options
 		scope                tally.Scope
 		logger               *zap.Logger
@@ -58,24 +58,30 @@ func NewTopicConsumer(
 	return &TopicConsumer{
 		topic:                topic,
 		msgC:                 msgC,
-		partitionConsumerMap: make(map[int32]*partitionConsumer),
+		partitionConsumerMap: make(map[int32]PartitionConsumer),
 		dlq:                  dlq,
 		saramaConsumer:       consumer,
 		options:              options,
 		scope:                scope,
-		logger:               logger,
+		logger:               logger.With(zap.String("topic", topic.Name), zap.String("cluster", topic.Cluster)),
 	}
 }
 
 // Start the DLQ consumer goroutine.
 func (c *TopicConsumer) Start() error {
-	return c.dlq.Start()
+	if err := c.dlq.Start(); err != nil {
+		c.logger.Error("topic consumer start error", zap.Error(err))
+		return err
+	}
+	c.logger.Info("topic consumer started", zap.Object("topic", c.topic))
+	return nil
 }
 
 // Stop shutdown and frees the resource held by this TopicConsumer and stops the batch DLQ producer.
 func (c *TopicConsumer) Stop() {
 	c.shutdown() // close each partition consumer
 	c.dlq.Stop() // close DLQ, which also closes sarama AsyncProducer
+	c.logger.Info("topic consumer stopped", zap.Object("topic", c.topic))
 }
 
 func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
@@ -86,8 +92,8 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 		old.Stop()
 		delete(c.partitionConsumerMap, partition)
 	}
-	c.logger.Info("new partition consumer", zap.Int32("partition", partition))
-	p := newPartitionConsumer(c.saramaConsumer, pc, c.topic.TopicType, c.options, c.msgC, c.dlq, c.scope, c.logger)
+	c.logger.Info("topic consumer adding new partition consumer", zap.Int32("partition", partition))
+	p := c.topic.PartitionConsumerFactory(c.topic, c.saramaConsumer, pc, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()
 }
@@ -96,7 +102,7 @@ func (c *TopicConsumer) shutdown() {
 	var wg sync.WaitGroup
 	for _, pc := range c.partitionConsumerMap {
 		wg.Add(1)
-		go func(p *partitionConsumer) {
+		go func(p PartitionConsumer) {
 			p.Drain(2 * c.options.OffsetCommitInterval)
 			wg.Done()
 		}(pc)
@@ -106,4 +112,15 @@ func (c *TopicConsumer) shutdown() {
 	for k := range c.partitionConsumerMap {
 		delete(c.partitionConsumerMap, k)
 	}
+}
+
+// ResetOffset will reset the consumer offset for the specified topic, partition.
+func (c *TopicConsumer) ResetOffset(partition int32, offsetRange kafka.OffsetRange) error {
+	pc, ok := c.partitionConsumerMap[partition]
+	if !ok {
+		c.logger.Warn("failed to reset offset for non existent topic-partition", zap.Int32("partition", partition), zap.Object("offsetRange", offsetRange))
+		return nil
+	}
+
+	return pc.ResetOffset(offsetRange)
 }

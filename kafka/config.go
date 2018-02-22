@@ -23,6 +23,7 @@ package kafka
 import (
 	"fmt"
 	"github.com/Shopify/sarama"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -47,8 +48,6 @@ type (
 	}
 
 	// ConsumerTopic contains information for a consumer topic.
-	// Consumer topics has contains two Topics:
-	// the topic to consume from and the DLQ topic to send nacked messages to.
 	ConsumerTopic struct {
 		Topic
 		RetryQ     Topic
@@ -93,6 +92,57 @@ type (
 	}
 )
 
+// NewConsumerConfig returns ConsumerConfig with sane defaults.
+func NewConsumerConfig(groupName string, topicList ConsumerTopicList) *ConsumerConfig {
+	cfg := new(ConsumerConfig)
+	cfg.GroupName = groupName
+	cfg.TopicList = topicList
+	cfg.Offsets.Initial.Offset = OffsetOldest
+	cfg.Offsets.Initial.Reset = false
+	cfg.Concurrency = 1
+	return cfg
+}
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (c ConsumerConfig) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("groupName", c.GroupName)
+	e.AddArray("topicList", c.TopicList)
+	e.AddObject("offset", zapcore.ObjectMarshalerFunc(func(ee zapcore.ObjectEncoder) error {
+		ee.AddObject("initial", zapcore.ObjectMarshalerFunc(func(eee zapcore.ObjectEncoder) error {
+			eee.AddInt64("offset", c.Offsets.Initial.Offset)
+			eee.AddBool("reset", c.Offsets.Initial.Reset)
+			return nil
+		}))
+		return nil
+	}))
+	e.AddInt("concurrency", c.Concurrency)
+	return nil
+}
+
+// MarshalLogArray implements zapcore.ArrayMarshaler for structured logging.
+func (c ConsumerTopicList) MarshalLogArray(e zapcore.ArrayEncoder) error {
+	for _, topic := range c {
+		e.AppendObject(topic)
+	}
+	return nil
+}
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (c ConsumerTopic) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddObject("defaultQ", c.Topic)
+	e.AddObject("retryQ", c.RetryQ)
+	e.AddObject("DLQ", c.DLQ)
+	e.AddInt64("maxRetries", c.MaxRetries)
+	return nil
+}
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (t Topic) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddString("name", t.Name)
+	e.AddString("cluster", t.Cluster)
+	return nil
+}
+
 // TopicNames returns the list of topics to consume as a string array.
 func (c ConsumerTopicList) TopicNames() []string {
 	output := make([]string, 0, len(c))
@@ -113,8 +163,8 @@ func (c ConsumerTopicList) GetConsumerTopicByClusterTopic(clusterName, topicName
 }
 
 // HashKey converts topic to a string for use as a map key
-func (c Topic) HashKey() string {
-	output := c.Name + c.Cluster
+func (t Topic) HashKey() string {
+	output := t.Name + t.Cluster
 	return output
 }
 

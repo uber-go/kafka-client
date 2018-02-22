@@ -22,6 +22,7 @@ package kafkaclient
 
 import (
 	"github.com/uber-go/kafka-client/internal/consumer"
+	"github.com/uber-go/kafka-client/kafka"
 )
 
 type (
@@ -29,4 +30,26 @@ type (
 	ConsumerOption interface {
 		apply(*consumer.Options)
 	}
+
+	rangeConsumersOption struct {
+		topicList kafka.ConsumerTopicList
+	}
 )
+
+// WithRangeConsumers creates a range consumer for the specified consumer topics.
+func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
+	return &rangeConsumersOption{
+		topicList: topicList,
+	}
+}
+
+func (o *rangeConsumersOption) apply(*consumer.Options) {
+	consumerTopicList := make([]consumer.Topic, 0, len(o.topicList))
+	for _, topic := range o.topicList {
+		consumerTopicList = append(consumerTopicList, consumer.Topic{
+			ConsumerTopic:            topic,
+			TopicType:                consumer.TopicTypeDefaultQ,
+			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
+		})
+	}
+}

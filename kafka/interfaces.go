@@ -20,7 +20,11 @@
 
 package kafka
 
-import "time"
+import (
+	"time"
+
+	"go.uber.org/zap/zapcore"
+)
 
 type (
 	// Consumer is the interface for a kafka consumer
@@ -28,7 +32,7 @@ type (
 		// Name returns the name of this consumer group.
 		Name() string
 		// Topics returns the names of the topics being consumed.
-		Topics() []string
+		Topics() ConsumerTopicList
 		// Start starts the consumer
 		Start() error
 		// Stop stops the consumer
@@ -37,10 +41,26 @@ type (
 		Closed() <-chan struct{}
 		// Messages return the message channel for this consumer
 		Messages() <-chan Message
+		// MergeDLQ consumes the offset ranges for the partitions from the DLQ topic for the specified ConsumerTopic
+		MergeDLQ(ConsumerTopic, map[int32]OffsetRange) error
+		// ResetOffset resets the offsets the partition consumer for the specified cluster, topic, partition.
+		ResetOffset(cluster, topic string, partition int32, offsetRange OffsetRange) error
+	}
+
+	// OffsetRange is a range of offsets
+	OffsetRange struct {
+		// LowOffset is the low watermark for this offset range.
+		// -1 indicates the value is not set.
+		LowOffset int64
+		// HighOffset is the high watermark for this offset range.
+		// -1 indicates the value is not set.
+		HighOffset int64
 	}
 
 	// Message is the interface for a Kafka message
 	Message interface {
+		zapcore.ObjectMarshaler
+
 		// Key is a mutable reference to the message's key.
 		Key() []byte
 		// Value is a mutable reference to the message's value.
@@ -76,3 +96,24 @@ type (
 		ResolveClusterForTopic(topic string) ([]string, error)
 	}
 )
+
+// MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
+func (o OffsetRange) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	e.AddInt64("lowOffset", o.LowOffset)
+	e.AddInt64("highOffset", o.HighOffset)
+	return nil
+}
+
+// NewOffsetRange returns a new OffsetRange with the LowOffset of the range as specified.
+// First variadic argument is used to set the HighOffset and all other variadic arguments are ignored.
+// If no variadic arguments are provided, HighOffset is set to -1 to indicate that it is not set.
+func NewOffsetRange(low int64, high ...int64) OffsetRange {
+	or := OffsetRange{
+		LowOffset:  low,
+		HighOffset: -1,
+	}
+	if len(high) > 0 {
+		or.HighOffset = high[0]
+	}
+	return or
+}

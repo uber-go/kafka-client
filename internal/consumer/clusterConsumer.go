@@ -21,14 +21,17 @@
 package consumer
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
 
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/util"
+	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type (
@@ -58,7 +61,7 @@ func NewClusterConsumer(
 		consumer:         saramaConsumer,
 		topicConsumerMap: consumerMap,
 		scope:            scope,
-		logger:           logger,
+		logger:           logger.With(zap.String("cluster", cluster)),
 		lifecycle:        util.NewRunLifecycle(cluster + "-consumer"),
 		stopC:            make(chan struct{}),
 		doneC:            make(chan struct{}),
@@ -68,8 +71,22 @@ func NewClusterConsumer(
 // Start starts the consumer
 func (c *ClusterConsumer) Start() error {
 	return c.lifecycle.Start(func() error {
-		c.logger.Info("cluster consumer starting")
+		logger := c.logger.With(
+			zap.Array("topicList", zapcore.ArrayMarshalerFunc(func(e zapcore.ArrayEncoder) error {
+				for topic := range c.topicConsumerMap {
+					e.AppendString(topic)
+				}
+				return nil
+			})),
+		)
+		for _, topicConsumer := range c.topicConsumerMap {
+			if err := topicConsumer.Start(); err != nil {
+				logger.Error("cluster consumer start error", zap.Error(err))
+				return err
+			}
+		}
 		go c.eventLoop()
+		logger.Info("cluster consumer started")
 		return nil
 	})
 }
@@ -77,7 +94,14 @@ func (c *ClusterConsumer) Start() error {
 // Stop stops the consumer
 func (c *ClusterConsumer) Stop() {
 	c.lifecycle.Stop(func() {
-		c.logger.Info("cluster consumer stopping")
+		c.logger.With(
+			zap.Array("topicList", zapcore.ArrayMarshalerFunc(func(e zapcore.ArrayEncoder) error {
+				for topic := range c.topicConsumerMap {
+					e.AppendString(topic)
+				}
+				return nil
+			})),
+		).Info("cluster consumer stopping")
 		close(c.stopC)
 	})
 }
@@ -89,7 +113,6 @@ func (c *ClusterConsumer) Closed() <-chan struct{} {
 
 // eventLoop is the main event loop for this consumer
 func (c *ClusterConsumer) eventLoop() {
-	c.logger.Info("consumer started")
 	for {
 		select {
 		case pc := <-c.consumer.Partitions():
@@ -97,7 +120,7 @@ func (c *ClusterConsumer) eventLoop() {
 		case n := <-c.consumer.Notifications():
 			c.handleNotification(n)
 		case err := <-c.consumer.Errors():
-			c.logger.Error("consumer error", zap.Error(err))
+			c.logger.Error("cluster consumer error", zap.Error(err))
 		case <-c.stopC:
 			c.shutdown()
 			c.logger.Info("cluster consumer stopped")
@@ -112,7 +135,7 @@ func (c *ClusterConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 	topic := pc.Topic()
 	topicConsumer, ok := c.topicConsumerMap[topic]
 	if !ok {
-		c.logger.Error("cannot consume messages for missing topic consumer", zap.String("topic", topic))
+		c.logger.Error("cluster consumer cannot consume messages for missing topic consumer", zap.String("topic", topic))
 		return
 	}
 	topicConsumer.addPartitionConsumer(pc)
@@ -124,13 +147,13 @@ func (c *ClusterConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 func (c *ClusterConsumer) handleNotification(n *cluster.Notification) {
 	for topic, partitions := range n.Claimed {
 		for _, partition := range partitions {
-			c.logger.Debug("partition rebalance claimed", zap.String("topic", topic), zap.Int32("partition", partition))
+			c.logger.Debug("cluster consumer partition rebalance claimed", zap.String("topic", topic), zap.Int32("partition", partition))
 		}
 	}
 
 	for topic, partitions := range n.Released {
 		for _, partition := range partitions {
-			c.logger.Debug("partition rebalance released", zap.String("topic", topic), zap.Int32("partition", partition))
+			c.logger.Debug("cluster consumer partition rebalance released", zap.String("topic", topic), zap.Int32("partition", partition))
 		}
 	}
 
@@ -141,7 +164,7 @@ func (c *ClusterConsumer) handleNotification(n *cluster.Notification) {
 		}
 	}
 
-	c.logger.Info("owned topic-partitions", zap.Strings("topic-partitions", current))
+	c.logger.Info("cluster consumer owned topic-partitions", zap.Strings("topic-partitions", current))
 }
 
 // shutdown stops the consumer and frees resources
@@ -158,4 +181,15 @@ func (c *ClusterConsumer) shutdown() {
 	wg.Wait()
 	c.consumer.Close() // close sarama cluster consumer
 	close(c.doneC)
+}
+
+// ResetOffset will reset the consumer offset for the specified topic, partition.
+func (c *ClusterConsumer) ResetOffset(topic string, partition int32, offsetRange kafka.OffsetRange) error {
+	tc, ok := c.topicConsumerMap[topic]
+	if !ok {
+		return errors.New("no topic consumer found")
+	}
+
+	return tc.ResetOffset(partition, offsetRange)
+
 }

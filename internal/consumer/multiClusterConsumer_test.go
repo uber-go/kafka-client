@@ -74,7 +74,7 @@ func (s *MultiClusterConsumerTestSuite) SetupTest() {
 		zap.L(),
 	)
 	s.Equal(s.config.GroupName, s.consumer.Name())
-	s.Equal(s.config.TopicList.TopicNames(), s.consumer.Topics())
+	s.Equal(s.config.TopicList.TopicNames(), s.consumer.Topics().TopicNames())
 }
 
 func (s *MultiClusterConsumerTestSuite) TeardownTest() {
