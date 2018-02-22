@@ -260,12 +260,12 @@ func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []con
 }
 
 func (c *consumerBuilder) uniqueTopics(topics []consumer.Topic) []consumer.Topic {
-	topicSet := make(map[string]consumer.Topic)
+	topicSet := make(map[string]bool)
 	uniqueTopics := make([]consumer.Topic, 0, len(topics))
 	for _, topic := range topics {
 		_, ok := topicSet[topic.Name]
 		if !ok {
-			topicSet[topic.Name] = topic
+			topicSet[topic.Name] = false
 			uniqueTopics = append(uniqueTopics, topic)
 		}
 	}
