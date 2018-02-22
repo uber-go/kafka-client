@@ -117,7 +117,8 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build cluster consumer
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
-		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, topicList)
+		uniqueTopicList := c.uniqueTopics(topicList)
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, uniqueTopicList)
 		if err != nil {
 			c.close()
 			return nil, err
@@ -125,7 +126,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 
 		// build topic consumers
 		topicConsumerMap := make(map[string]*consumer.TopicConsumer)
-		for _, topic := range topicList {
+		for _, topic := range uniqueTopicList {
 			retry, err := c.getOrAddDLQ(topic.RetryQ)
 			if err != nil {
 				c.close()
@@ -256,6 +257,19 @@ func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []con
 
 	c.clusterSaramaConsumerMap[cluster] = saramaConsumer
 	return saramaConsumer, nil
+}
+
+func (c *consumerBuilder) uniqueTopics(topics []consumer.Topic) []consumer.Topic {
+	topicSet := make(map[string]bool)
+	uniqueTopics := make([]consumer.Topic, 0, len(topics))
+	for _, topic := range topics {
+		_, ok := topicSet[topic.Name]
+		if !ok {
+			topicSet[topic.Name] = false
+			uniqueTopics = append(uniqueTopics, topic)
+		}
+	}
+	return uniqueTopics
 }
 
 func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) *consumer.Options {
