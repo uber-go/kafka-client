@@ -32,7 +32,12 @@ type (
 	// Client refers to the kafka client. Serves as
 	// the entry point to producing or consuming
 	// messages from kafka
-	Client struct {
+	Client interface {
+		// NewConsumer returns a new instance of kafka consumer.
+		NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error)
+	}
+
+	client struct {
 		tally    tally.Scope
 		logger   *zap.Logger
 		resolver kafka.NameResolver
@@ -40,8 +45,8 @@ type (
 )
 
 // New returns a new kafka client
-func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Client {
-	return &Client{
+func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) Client {
+	return &client{
 		resolver: resolver,
 		logger:   logger,
 		tally:    scope,
@@ -53,7 +58,7 @@ func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) *Cl
 // It is possible for NewConsumer to start a consumer which consumes from a subset of topics if EnablePartialConsumption,
 // ConsumerOption is used.
 // If partial consumption is enabled, error will not be returned.
-func (c *Client) NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error) {
+func (c *client) NewConsumer(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) (kafka.Consumer, error) {
 	return newConsumerBuilder(config, c.resolver, c.tally, c.logger, consumerOpts...).build()
 }
 
