@@ -44,7 +44,7 @@ type (
 	}
 )
 
-// New returns a new kafka client
+// New returns a new kafka client.
 func New(resolver kafka.NameResolver, logger *zap.Logger, scope tally.Scope) Client {
 	return &client{
 		resolver: resolver,
