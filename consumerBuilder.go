@@ -27,6 +27,7 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"time"
 )
 
 type (
@@ -298,6 +299,7 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.Config.Producer.Return.Successes = true
 	config.Config.Producer.Return.Errors = true
 	config.Config.Producer.Flush.Messages = options.Concurrency
+	config.Config.Producer.Flush.Frequency = 1 * time.Second
 	config.ChannelBufferSize = options.PartitionRcvBufferSize
 	config.Group.Mode = options.ConsumerMode
 	config.Group.Return.Notifications = true
