@@ -43,7 +43,7 @@ func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
 	}
 }
 
-func (o *rangeConsumersOption) apply(*consumer.Options) {
+func (o *rangeConsumersOption) apply(opts *consumer.Options) {
 	consumerTopicList := make([]consumer.Topic, 0, len(o.topicList))
 	for _, topic := range o.topicList {
 		consumerTopicList = append(consumerTopicList, consumer.Topic{
@@ -52,4 +52,5 @@ func (o *rangeConsumersOption) apply(*consumer.Options) {
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
 		})
 	}
+	opts.RangeConsumerTopics = consumerTopicList
 }
