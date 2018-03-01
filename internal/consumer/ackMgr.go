@@ -99,7 +99,7 @@ func newAckManager(maxOutstanding int, scope tally.Scope, logger *zap.Logger) *a
 func (mgr *ackManager) GetAckID(msgSeq int64) (ackID, error) {
 	addr, err := mgr.unackedSeqList.Add(msgSeq)
 	if err != nil {
-		mgr.tally.Counter(metrics.KafkaPartitionGetAckIDErrors)
+		mgr.tally.Counter(metrics.KafkaPartitionGetAckIDErrors).Inc(1)
 		if err != list.ErrCapacity {
 			// list.ErrCapacity is handled gracefully so no need to log error.
 			mgr.logger.Error("GetAckID() error", zap.Int64("rcvdSeq", msgSeq), zap.Error(err))
@@ -110,20 +110,27 @@ func (mgr *ackManager) GetAckID(msgSeq int64) (ackID, error) {
 }
 
 // Ack marks the given msgSeqNum as processed
-func (mgr *ackManager) Ack(id ackID) {
-	err := mgr.unackedSeqList.Remove(id.listAddr, id.msgSeq)
+func (mgr *ackManager) Ack(id ackID) (err error) {
+	err = mgr.unackedSeqList.Remove(id.listAddr, id.msgSeq)
 	if err != nil {
-		mgr.tally.Counter(metrics.KafkaPartitionAckErrors)
+		mgr.tally.Counter(metrics.KafkaPartitionAckErrors).Inc(1)
 		mgr.logger.Error("ack error: list remove failed", zap.Error(err))
 	}
+	mgr.tally.Counter(metrics.KafkaPartitionAck).Inc(1)
+	return
 }
 
 // Nack marks the given msgSeqNum as processed, the expectation
 // is for the caller to move the message to an error queue
 // before calling this
-func (mgr *ackManager) Nack(id ackID) {
-	mgr.Ack(id)
-	mgr.tally.Counter(metrics.KafkaPartitionNacks)
+func (mgr *ackManager) Nack(id ackID) (err error) {
+	err = mgr.unackedSeqList.Remove(id.listAddr, id.msgSeq)
+	if err != nil {
+		mgr.tally.Counter(metrics.KafkaPartitionNackErrors).Inc(1)
+		mgr.logger.Error("nack error: list remove failed", zap.Error(err))
+	}
+	mgr.tally.Counter(metrics.KafkaPartitionNack).Inc(1)
+	return
 }
 
 // CommitLevel returns the seqNum that can be

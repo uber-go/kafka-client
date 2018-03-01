@@ -33,14 +33,16 @@ const (
 	KafkaDLQStopped       = "kafka.dlq.stopped"
 	KafkaDLQMessagesOut   = "kafka.dlq.messages-out"
 	KafkaDLQErrors        = "kafka.dlq.errors"
-	KafkaDLQMetadataError = "kafka.dlq.metadata-errors"
+	KafkaDLQMetadataError = "kafka.dlq.metadata-error"
 
 	KafkaPartitionAckMgrDups     = "kafka.partition.ackmgr.duplicates"
 	KafkaPartitionAckMgrSkipped  = "kafka.partition.ackmgr.skipped"
-	KafkaPartitionAckMgrListFull = "kafka.partition.ackmgr.list-full-errors"
-	KafkaPartitionGetAckIDErrors = "kafka.partition.ackmgr.get-ackid-errors"
-	KafkaPartitionAckErrors      = "kafka.partition.ackmgr.ack-errors"
-	KafkaPartitionNacks          = "kafka.partition.nacks"
+	KafkaPartitionAckMgrListFull = "kafka.partition.ackmgr.list-full-error"
+	KafkaPartitionGetAckIDErrors = "kafka.partition.ackmgr.get-ackid-error"
+	KafkaPartitionAck            = "kafka.partition.ack"
+	KafkaPartitionAckErrors      = "kafka.partition.ackmgr.ack-error"
+	KafkaPartitionNack           = "kafka.partition.nack"
+	KafkaPartitionNackErrors     = "kafka.partition.ackmgr.nack-error"
 	KafkaPartitionRebalance      = "kafka.partition.rebalance"
 )
 
