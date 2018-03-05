@@ -126,8 +126,7 @@ func (m *Message) RetryCount() int64 {
 // Ack acknowledges the message
 func (m *Message) Ack() error {
 	ctx := &m.ctx
-	ctx.ackMgr.Ack(ctx.ackID)
-	return nil
+	return ctx.ackMgr.Ack(ctx.ackID)
 }
 
 // Nack negatively acknowledges the message
@@ -139,8 +138,7 @@ func (m *Message) Nack() error {
 	if err := ctx.dlq.Add(m); err != nil {
 		return err
 	}
-	ctx.ackMgr.Nack(ctx.ackID)
-	return nil
+	return ctx.ackMgr.Nack(ctx.ackID)
 }
 
 // MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
