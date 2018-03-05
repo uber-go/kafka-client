@@ -112,13 +112,15 @@ func (mgr *ackManager) GetAckID(msgSeq int64) (ackID, error) {
 // Ack marks the given msgSeqNum as processed.
 // Ack always returns nil because the errors are non-actionable and do not affect correctness
 // so we do not want to propagate back to user.
+// Non-actionable errors are visible via "kafka.partition.ackmgr.ack-error" metrics.
 func (mgr *ackManager) Ack(id ackID) error {
 	err := mgr.unackedSeqList.Remove(id.listAddr, id.msgSeq)
 	if err != nil {
 		mgr.tally.Counter(metrics.KafkaPartitionAckErrors).Inc(1)
 		mgr.logger.Error("ack error: list remove failed", zap.Error(err))
+	} else {
+		mgr.tally.Counter(metrics.KafkaPartitionAck).Inc(1)
 	}
-	mgr.tally.Counter(metrics.KafkaPartitionAck).Inc(1)
 	return nil
 }
 
@@ -127,13 +129,15 @@ func (mgr *ackManager) Ack(id ackID) error {
 // before calling this
 // Nack always returns nil because the errors are non-actionable and do not affect correctness
 // so we do not want to propagate back to user.
+// Non-actionable errors are visible via "kafka.partition.ackmgr.nack-error" metrics.
 func (mgr *ackManager) Nack(id ackID) error {
 	err := mgr.unackedSeqList.Remove(id.listAddr, id.msgSeq)
 	if err != nil {
 		mgr.tally.Counter(metrics.KafkaPartitionNackErrors).Inc(1)
 		mgr.logger.Error("nack error: list remove failed", zap.Error(err))
+	} else {
+		mgr.tally.Counter(metrics.KafkaPartitionNack).Inc(1)
 	}
-	mgr.tally.Counter(metrics.KafkaPartitionNack).Inc(1)
 	return nil
 }
 
