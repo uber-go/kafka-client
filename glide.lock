@@ -1,8 +1,8 @@
-hash: 8c4bed9db9f5629919b9f75f736dc3edbc121197e9f497c3568f760dd7c72e83
-updated: 2018-02-13T14:03:46.42337-08:00
+hash: f7c3d44e2e64af96f794d4944f7792de71dbfd069a6b06088e9eb13ab27b3132
+updated: 2018-03-05T15:45:15.526195-08:00
 imports:
 - name: github.com/bsm/sarama-cluster
-  version: 3001c2453136632aa3219a58ea3795bb584b83b5
+  version: cf455bc755fe41ac9bb2861e7a961833d9c2ecc3
 - name: github.com/davecgh/go-spew
   version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
   subpackages:
@@ -34,7 +34,7 @@ imports:
 - name: github.com/Shopify/sarama
   version: f7be6aa2bc7b2e38edf816b08b582782194a1c02
 - name: github.com/uber-go/tally
-  version: 6c4631652c6aab57c64f65c2e0aaec2e9aae3a64
+  version: 522328b48efad0c6034dba92bf39228694e9d31f
 - name: go.uber.org/atomic
   version: 8474b86a5a6f79c443ce4b2992817ff32cf208b8
 - name: go.uber.org/multierr
@@ -53,7 +53,7 @@ testImports:
   subpackages:
   - difflib
 - name: github.com/stretchr/testify
-  version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f
+  version: 12b6f73e6084dad08a7c6e575284b177ecafbc71
   subpackages:
   - assert
   - require
