@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.2 (unreleased)
+v0.1.2 (2018-03-07)
 -------------------
 
 - Pin sarama-cluster to 2.1.13.
