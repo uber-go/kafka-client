@@ -3,7 +3,7 @@
 v0.1.2 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Pin sarama-cluster to 2.1.13.
 
 
 v0.1.1 (2018-03-05)
