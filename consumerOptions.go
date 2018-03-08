@@ -62,7 +62,7 @@ func (o *rangeConsumersOption) apply(opts *consumer.Options) {
 	}
 }
 
-// WithDLQTopics creates a range consumer for the specified consumer topics.
+// WithDLQTopics creates a range consumer for the specified consumer DLQ topics.
 func WithDLQTopics(topicList kafka.ConsumerTopicList) ConsumerOption {
 	return &dlqTopicsOptions{
 		topicList: topicList,
@@ -79,7 +79,7 @@ func (o *dlqTopicsOptions) apply(opts *consumer.Options) {
 	}
 }
 
-// WithRetryTopics creates a range consumer for the specified consumer topics.
+// WithRetryTopics creates a consumer for the specified consumer Retry topics.
 func WithRetryTopics(topicList kafka.ConsumerTopicList) ConsumerOption {
 	return &retryTopicsOptions{
 		topicList: topicList,
