@@ -289,7 +289,7 @@ func (p *partitionConsumer) markOffset() {
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 	metadata := newDLQMetadata()
-	if p.topicPartition.TopicType == TopicTypeRetryQ || p.topicPartition.TopicType == TopicTypeDLQ {
+	if p.topicPartition.TopicType == kafka.TopicTypeRetryQ || p.topicPartition.TopicType == kafka.TopicTypeDLQ {
 		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
 			p.logger.Fatal("partition consumer unable to marshal dlq metadata from message key", zap.Error(err))
 			return

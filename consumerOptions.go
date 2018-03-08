@@ -33,13 +33,15 @@ type (
 
 	rangeConsumersOption struct {
 		topicList kafka.ConsumerTopicList
+		topicType kafka.TopicType
 	}
 )
 
 // WithRangeConsumers creates a range consumer for the specified consumer topics.
-func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
+func WithRangeConsumers(topicList kafka.ConsumerTopicList, topicType kafka.TopicType) ConsumerOption {
 	return &rangeConsumersOption{
 		topicList: topicList,
+		topicType: topicType,
 	}
 }
 
@@ -48,7 +50,7 @@ func (o *rangeConsumersOption) apply(opts *consumer.Options) {
 	for _, topic := range o.topicList {
 		consumerTopicList = append(consumerTopicList, consumer.Topic{
 			ConsumerTopic:            topic,
-			TopicType:                consumer.TopicTypeDefaultQ,
+			TopicType:                o.topicType,
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
 		})
 	}

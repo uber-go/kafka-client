@@ -106,9 +106,9 @@ func (c *consumerBuilder) Build() (kafka.Consumer, error) {
 func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, TopicType: consumer.TopicTypeDefaultQ, PartitionConsumerFactory: consumer.NewPartitionConsumer})
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), TopicType: consumer.TopicTypeRetryQ, PartitionConsumerFactory: consumer.NewPartitionConsumer})
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), TopicType: consumer.TopicTypeDLQ, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, TopicType: kafka.TopicTypeDefaultQ, PartitionConsumerFactory: consumer.NewPartitionConsumer})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), TopicType: kafka.TopicTypeRetryQ, PartitionConsumerFactory: consumer.NewPartitionConsumer})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), TopicType: kafka.TopicTypeDLQ, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
 	}
 
 	// Add additional topics that may have been injected from WithRangeConsumer option.

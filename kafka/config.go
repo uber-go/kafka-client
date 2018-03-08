@@ -33,6 +33,15 @@ const (
 	OffsetNewest = sarama.OffsetNewest
 )
 
+const (
+	// TopicTypeDefaultQ is an enum for a consumer that reads from a the default/original topic.
+	TopicTypeDefaultQ TopicType = iota + 1
+	// TopicTypeRetryQ is a enum for a consumer that reads from a RetryQ topic.
+	TopicTypeRetryQ
+	// TopicTypeDLQ is a enum for a consumer that reads from a DLQ topic.
+	TopicTypeDLQ
+)
+
 type (
 	// Topic contains information for a topic.
 	// Our topics are uniquely defined by a Topic Name and Cluster pair.
@@ -46,6 +55,11 @@ type (
 		// TODO (gteo): remove this and rely on a NameResolver as single source for broker IP
 		BrokerList []string
 	}
+
+	// TopicType is an enum for the type of topic: TopicTypeDefaultQ, TopicTypeRetryQ, TopicTypeDLQ.
+	// TopicType is an advanced feature and be used to define custom consumer behavior by using the optional parameters
+	// to the NewConsumer constructor.
+	TopicType int
 
 	// ConsumerTopic contains information for a consumer topic.
 	ConsumerTopic struct {
@@ -174,4 +188,18 @@ func (c ConsumerTopic) DLQEnabled() bool {
 		return true
 	}
 	return false
+}
+
+// String converts the TopicType enum to a human readable string.
+func (t TopicType) String() string {
+	switch t {
+	case TopicTypeDefaultQ:
+		return "defaultQ"
+	case TopicTypeRetryQ:
+		return "retryQ"
+	case TopicTypeDLQ:
+		return "DLQ"
+	default:
+		return "invalid"
+	}
 }
