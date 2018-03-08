@@ -34,9 +34,18 @@ type (
 	rangeConsumersOption struct {
 		topicList kafka.ConsumerTopicList
 	}
+
+	dlqTopicsOptions struct {
+		topicList kafka.ConsumerTopicList
+	}
+
+	retryTopicsOptions struct {
+		topicList kafka.ConsumerTopicList
+	}
 )
 
 // WithRangeConsumers creates a range consumer for the specified consumer topics.
+// DEPRECATED
 func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
 	return &rangeConsumersOption{
 		topicList: topicList,
@@ -44,13 +53,45 @@ func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
 }
 
 func (o *rangeConsumersOption) apply(opts *consumer.Options) {
-	consumerTopicList := make([]consumer.Topic, 0, len(o.topicList))
 	for _, topic := range o.topicList {
-		consumerTopicList = append(consumerTopicList, consumer.Topic{
+		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
 			ConsumerTopic:            topic,
 			TopicType:                consumer.TopicTypeDefaultQ,
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
 		})
 	}
-	opts.RangeConsumerTopics = consumerTopicList
+}
+
+// WithDLQTopics creates a range consumer for the specified consumer topics.
+func WithDLQTopics(topicList kafka.ConsumerTopicList) ConsumerOption {
+	return &dlqTopicsOptions{
+		topicList: topicList,
+	}
+}
+
+func (o *dlqTopicsOptions) apply(opts *consumer.Options) {
+	for _, topic := range o.topicList {
+		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
+			ConsumerTopic:            topic,
+			TopicType:                consumer.TopicTypeDLQ,
+			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
+		})
+	}
+}
+
+// WithRetryTopics creates a range consumer for the specified consumer topics.
+func WithRetryTopics(topicList kafka.ConsumerTopicList) ConsumerOption {
+	return &retryTopicsOptions{
+		topicList: topicList,
+	}
+}
+
+func (o *retryTopicsOptions) apply(opts *consumer.Options) {
+	for _, topic := range o.topicList {
+		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
+			ConsumerTopic:            topic,
+			TopicType:                consumer.TopicTypeRetryQ,
+			PartitionConsumerFactory: consumer.NewPartitionConsumer,
+		})
+	}
 }

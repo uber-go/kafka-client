@@ -3,7 +3,7 @@
 v0.1.3 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Add WithRetryTopics and WithDLQTopics to inject additional consumers for additional retry or DLQ topics.
 
 
 v0.1.2 (2018-03-07)

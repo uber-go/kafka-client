@@ -38,7 +38,7 @@ type (
 		RebalanceDwellTime     time.Duration
 		MaxProcessingTime      time.Duration // amount of time a partitioned consumer will wait during a drain
 		ConsumerMode           cluster.ConsumerMode
-		RangeConsumerTopics    []Topic
+		OtherConsumerTopics    []Topic
 	}
 )
 
@@ -53,5 +53,6 @@ func DefaultOptions() *Options {
 		MaxProcessingTime:      250 * time.Millisecond,
 		OffsetPolicy:           sarama.OffsetOldest,
 		ConsumerMode:           cluster.ConsumerModePartitions,
+		OtherConsumerTopics:    make([]Topic, 0, 10),
 	}
 }
