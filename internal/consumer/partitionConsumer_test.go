@@ -53,7 +53,7 @@ func (s *RangePartitionConsumerTestSuite) SetupTest() {
 	s.saramaPartitionConsumer = newMockPartitionedConsumer("topic", 0, 100, 5)
 	topic := new(Topic)
 	topic.Name = "topic"
-	topic.TopicType = TopicTypeDefaultQ
+	topic.TopicType = kafka.TopicTypeDefaultQ
 	opts := DefaultOptions()
 	l := zap.NewNop()
 	s.partitionConsumer = newPartitionConsumer(
