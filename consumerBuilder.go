@@ -112,7 +112,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	}
 
 	// Add additional topics that may have been injected from WithRangeConsumer option.
-	for _, topic := range c.options.RangeConsumerTopics {
+	for _, topic := range c.options.OtherConsumerTopics {
 		c.addTopicToClusterTopicsMap(topic)
 	}
 
