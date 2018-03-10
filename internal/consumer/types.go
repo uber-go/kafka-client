@@ -21,6 +21,8 @@
 package consumer
 
 import (
+	"errors"
+
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
 	"github.com/golang/protobuf/proto"
@@ -103,6 +105,9 @@ func NoopDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
 // ProtobufDLQMetadataDecoder uses proto.Unmarshal to decode protobuf encoded binary into the DLQMetadata object.
 func ProtobufDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
 	dlqMetadata := newDLQMetadata()
+	if b == nil {
+		return nil, errors.New("expected to decode non-nil byte array to DLQ metadata")
+	}
 	if err := proto.Unmarshal(b, dlqMetadata); err != nil {
 		return nil, err
 	}

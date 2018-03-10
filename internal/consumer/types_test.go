@@ -71,6 +71,12 @@ func TestProtobufDLQMetadataDecoder(t *testing.T) {
 	decodedDLQMetadata, err := ProtobufDLQMetadataDecoder(b)
 	assert.NoError(t, err)
 	assert.EqualValues(t, dlqMetadata, decodedDLQMetadata)
+
+	_, err = ProtobufDLQMetadataDecoder(nil)
+	assert.Error(t, err)
+
+	_, err = ProtobufDLQMetadataDecoder([]byte{1, 2, 3, 4})
+	assert.Error(t, err)
 }
 
 func TestNoopDLQMetadataDecoder(t *testing.T) {
