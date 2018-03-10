@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/golang/protobuf/proto"
 )
 
 func TestSaramaConsumer(t *testing.T) {
@@ -61,4 +62,23 @@ func TestSaramaClient(t *testing.T) {
 	// Second close should return no error and not increment closed counter
 	assert.NoError(t, c.Close())
 	assert.EqualValues(t, 1, atomic.LoadInt32(&mock.closed))
+}
+
+func TestProtobufDLQMetadataDecoder(t *testing.T) {
+	dlqMetadata := newDLQMetadata()
+	b, err := proto.Marshal(dlqMetadata)
+	assert.NoError(t, err)
+	decodedDLQMetadata, err := ProtobufDLQMetadataDecoder(b)
+	assert.NoError(t, err)
+	assert.EqualValues(t, dlqMetadata, decodedDLQMetadata)
+}
+
+func TestNoopDLQMetadataDecoder(t *testing.T) {
+	dlqMetadata := newDLQMetadata()
+	dlqMetadata.Offset = 100
+	b, err := proto.Marshal(dlqMetadata)
+	assert.NoError(t, err)
+	decodedDLQMetadata, err := NoopDLQMetadataDecoder(b)
+	assert.NoError(t, err)
+	assert.EqualValues(t, newDLQMetadata(), decodedDLQMetadata)
 }
