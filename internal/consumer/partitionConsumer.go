@@ -29,7 +29,6 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
-	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/list"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
@@ -288,12 +287,10 @@ func (p *partitionConsumer) markOffset() {
 
 // deliver delivers a message through the consumer channel
 func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
-	metadata := newDLQMetadata()
-	if p.topicPartition.TopicType == TopicTypeRetryQ || p.topicPartition.TopicType == TopicTypeDLQ {
-		if err := proto.Unmarshal(scm.Key, metadata); err != nil {
-			p.logger.Fatal("partition consumer unable to marshal dlq metadata from message key", zap.Error(err))
-			return
-		}
+	metadata, err := p.topicPartition.DLQMetadataDecoder(scm.Key)
+	if err != nil {
+		p.logger.Fatal("partition consumer unable to marshal dlq metadata from message key", zap.Error(err))
+		return
 	}
 
 	ackID, err := p.trackOffset(scm.Offset)

@@ -56,7 +56,7 @@ func (o *rangeConsumersOption) apply(opts *consumer.Options) {
 	for _, topic := range o.topicList {
 		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
 			ConsumerTopic:            topic,
-			TopicType:                consumer.TopicTypeDefaultQ,
+			DLQMetadataDecoder:       consumer.NoopDLQMetadataDecoder,
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
 		})
 	}
@@ -73,7 +73,7 @@ func (o *dlqTopicsOptions) apply(opts *consumer.Options) {
 	for _, topic := range o.topicList {
 		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
 			ConsumerTopic:            topic,
-			TopicType:                consumer.TopicTypeDLQ,
+			DLQMetadataDecoder:       consumer.ProtobufDLQMetadataDecoder,
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
 		})
 	}
@@ -90,7 +90,7 @@ func (o *retryTopicsOptions) apply(opts *consumer.Options) {
 	for _, topic := range o.topicList {
 		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
 			ConsumerTopic:            topic,
-			TopicType:                consumer.TopicTypeRetryQ,
+			DLQMetadataDecoder:       consumer.ProtobufDLQMetadataDecoder,
 			PartitionConsumerFactory: consumer.NewPartitionConsumer,
 		})
 	}

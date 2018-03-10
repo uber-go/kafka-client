@@ -23,6 +23,7 @@ package consumer
 import (
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
+	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"go.uber.org/zap/zapcore"
@@ -86,10 +87,27 @@ type (
 	// Topic is an internal wrapper around kafka.ConsumerTopic
 	Topic struct {
 		kafka.ConsumerTopic
-		TopicType
+		DLQMetadataDecoder
 		PartitionConsumerFactory
 	}
+
+	// DLQMetadataDecoder decodes a byte array into DLQMetadata.
+	DLQMetadataDecoder func([]byte) (*DLQMetadata, error)
 )
+
+// NoopDLQMetadataDecoder does no decoding and returns a default DLQMetadata object.
+func NoopDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
+	return newDLQMetadata(), nil
+}
+
+// ProtobufDLQMetadataDecoder uses proto.Unmarshal to decode protobuf encoded binary into the DLQMetadata object.
+func ProtobufDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
+	dlqMetadata := newDLQMetadata()
+	if err := proto.Unmarshal(b, dlqMetadata); err != nil {
+		return nil, err
+	}
+	return dlqMetadata, nil
+}
 
 // String converts the TopicType enum to a human readable string.
 func (t TopicType) String() string {
@@ -108,7 +126,6 @@ func (t TopicType) String() string {
 // MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
 func (t Topic) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	t.ConsumerTopic.MarshalLogObject(e)
-	e.AddString("topicType", t.TopicType.String())
 	return nil
 }
 

@@ -36,7 +36,6 @@ func TestDLQConsumerOptions(t *testing.T) {
 	options := consumer.DefaultOptions()
 	consumerOption.apply(options)
 	assert.Equal(t, 2, len(options.OtherConsumerTopics))
-	assert.Equal(t, consumer.TopicTypeDLQ, options.OtherConsumerTopics[0].TopicType)
 }
 
 func TestRetryConsumerOptions(t *testing.T) {
@@ -47,5 +46,4 @@ func TestRetryConsumerOptions(t *testing.T) {
 	options := consumer.DefaultOptions()
 	consumerOption.apply(options)
 	assert.Equal(t, 2, len(options.OtherConsumerTopics))
-	assert.Equal(t, consumer.TopicTypeRetryQ, options.OtherConsumerTopics[0].TopicType)
 }
