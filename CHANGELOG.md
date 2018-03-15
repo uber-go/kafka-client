@@ -3,7 +3,8 @@
 v0.1.4 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Fix DLQMetadata decoding to use DLQMetadataDecoder func instead of inferred decoding from TopicType.
+- Fix consumer to use noopDLQ if RetryQ or DLQ in config is empty.
 
 
 v0.1.3 (2018-03-09)

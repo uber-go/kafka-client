@@ -85,7 +85,7 @@ func (s *ClusterConsumerTestSuite) SetupTest() {
 	s.msgCh = make(chan kafka.Message, 10)
 	s.saramaConsumer = newMockSaramaConsumer()
 	s.dlqProducer = newMockDLQProducer()
-	s.topicConsumer = NewTopicConsumer(Topic{ConsumerTopic: topic, TopicType: TopicTypeDefaultQ, PartitionConsumerFactory: NewPartitionConsumer}, s.msgCh, s.saramaConsumer, s.dlqProducer, s.options, tally.NoopScope, s.logger)
+	s.topicConsumer = NewTopicConsumer(Topic{ConsumerTopic: topic, DLQMetadataDecoder: NoopDLQMetadataDecoder, PartitionConsumerFactory: NewPartitionConsumer}, s.msgCh, s.saramaConsumer, s.dlqProducer, s.options, tally.NoopScope, s.logger)
 	s.consumer = NewClusterConsumer(topic.Cluster, s.saramaConsumer, map[string]*TopicConsumer{s.topic: s.topicConsumer}, tally.NoopScope, s.logger)
 }
 

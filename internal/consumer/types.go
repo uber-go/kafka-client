@@ -21,20 +21,14 @@
 package consumer
 
 import (
+	"errors"
+
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
+	"github.com/golang/protobuf/proto"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"go.uber.org/zap/zapcore"
-)
-
-const (
-	// TopicTypeDefaultQ is an enum for a consumer that reads from a the default/original topic.
-	TopicTypeDefaultQ TopicType = iota + 1
-	// TopicTypeRetryQ is a enum for a consumer that reads from a RetryQ topic.
-	TopicTypeRetryQ
-	// TopicTypeDLQ is a enum for a consumer that reads from a DLQ topic.
-	TopicTypeDLQ
 )
 
 type (
@@ -80,35 +74,37 @@ type (
 		NewSaramaClient   func([]string, *sarama.Config) (sarama.Client, error)
 	}
 
-	// TopicType is an enum for the type of topic: TopicTypeDefaultQ, TopicTypeRetryQ, TopicTypeDLQ.
-	TopicType int
-
 	// Topic is an internal wrapper around kafka.ConsumerTopic
 	Topic struct {
 		kafka.ConsumerTopic
-		TopicType
+		DLQMetadataDecoder
 		PartitionConsumerFactory
 	}
+
+	// DLQMetadataDecoder decodes a byte array into DLQMetadata.
+	DLQMetadataDecoder func([]byte) (*DLQMetadata, error)
 )
 
-// String converts the TopicType enum to a human readable string.
-func (t TopicType) String() string {
-	switch t {
-	case TopicTypeDefaultQ:
-		return "defaultQ"
-	case TopicTypeRetryQ:
-		return "retryQ"
-	case TopicTypeDLQ:
-		return "DLQ"
-	default:
-		return "invalid"
+// NoopDLQMetadataDecoder does no decoding and returns a default DLQMetadata object.
+func NoopDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
+	return newDLQMetadata(), nil
+}
+
+// ProtobufDLQMetadataDecoder uses proto.Unmarshal to decode protobuf encoded binary into the DLQMetadata object.
+func ProtobufDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
+	dlqMetadata := newDLQMetadata()
+	if b == nil {
+		return nil, errors.New("expected to decode non-nil byte array to DLQ metadata")
 	}
+	if err := proto.Unmarshal(b, dlqMetadata); err != nil {
+		return nil, err
+	}
+	return dlqMetadata, nil
 }
 
 // MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
 func (t Topic) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	t.ConsumerTopic.MarshalLogObject(e)
-	e.AddString("topicType", t.TopicType.String())
 	return nil
 }
 

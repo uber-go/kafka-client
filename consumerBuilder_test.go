@@ -74,6 +74,15 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 			},
 			MaxRetries: 1,
 		},
+		{
+			Topic: kafka.Topic{
+				Name:    "topic1",
+				Cluster: "cluster",
+			},
+			RetryQ:     kafka.Topic{},
+			DLQ:        kafka.Topic{},
+			MaxRetries: 1,
+		},
 	})
 	s.resolver = kafka.NewStaticNameResolver(
 		map[string][]string{
