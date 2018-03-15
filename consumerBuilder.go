@@ -107,8 +107,12 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
 		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
+		if consumerTopic.RetryQ.Name != "" && consumerTopic.RetryQ.Cluster != "" {
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
+		}
+		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
+		}
 	}
 
 	// Add additional topics that may have been injected from WithRangeConsumer option.

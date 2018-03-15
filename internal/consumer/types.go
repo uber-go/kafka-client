@@ -31,15 +31,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const (
-	// TopicTypeDefaultQ is an enum for a consumer that reads from a the default/original topic.
-	TopicTypeDefaultQ TopicType = iota + 1
-	// TopicTypeRetryQ is a enum for a consumer that reads from a RetryQ topic.
-	TopicTypeRetryQ
-	// TopicTypeDLQ is a enum for a consumer that reads from a DLQ topic.
-	TopicTypeDLQ
-)
-
 type (
 	// SaramaConsumer is an interface for external consumer library (sarama)
 	SaramaConsumer interface {
@@ -83,9 +74,6 @@ type (
 		NewSaramaClient   func([]string, *sarama.Config) (sarama.Client, error)
 	}
 
-	// TopicType is an enum for the type of topic: TopicTypeDefaultQ, TopicTypeRetryQ, TopicTypeDLQ.
-	TopicType int
-
 	// Topic is an internal wrapper around kafka.ConsumerTopic
 	Topic struct {
 		kafka.ConsumerTopic
@@ -112,20 +100,6 @@ func ProtobufDLQMetadataDecoder(b []byte) (*DLQMetadata, error) {
 		return nil, err
 	}
 	return dlqMetadata, nil
-}
-
-// String converts the TopicType enum to a human readable string.
-func (t TopicType) String() string {
-	switch t {
-	case TopicTypeDefaultQ:
-		return "defaultQ"
-	case TopicTypeRetryQ:
-		return "retryQ"
-	case TopicTypeDLQ:
-		return "DLQ"
-	default:
-		return "invalid"
-	}
 }
 
 // MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
