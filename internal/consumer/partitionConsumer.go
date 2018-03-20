@@ -243,6 +243,13 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			p.tally.Gauge(metrics.KafkaPartitionTimeLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
 			p.tally.Counter(metrics.KafkaPartitionMessagesIn).Inc(1)
+			delay := p.topicPartition.RetryDelay
+			// check message lag and non-zero retry delay, the assignment of topic RetryDelay is at topic initialization stage
+			if delay > 0 && lag > 0 && lag < delay {
+				p.logger.Debug("delay msg deliver for retry topic", zap.String("topic", p.topicPartition.Name),
+					zap.Duration("sleep delay", delay-lag))
+				time.Sleep(delay - lag)
+			}
 			p.deliver(m)
 
 			if offsetRange != nil && m.Offset >= offsetRange.HighOffset {
