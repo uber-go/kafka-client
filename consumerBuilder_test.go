@@ -23,6 +23,7 @@ package kafkaclient
 import (
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
@@ -31,7 +32,6 @@ import (
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"time"
 )
 
 type (
@@ -66,9 +66,9 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 				Cluster: "cluster",
 			},
 			RetryQ: kafka.Topic{
-				Name:       "retry-topic",
-				Cluster:    "dlq-cluster",
-				RetryDelay: time.Microsecond,
+				Name:    "retry-topic",
+				Cluster: "dlq-cluster",
+				Delay:   time.Microsecond,
 			},
 			DLQ: kafka.Topic{
 				Name:    "dlq-topic",
@@ -162,7 +162,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		output := make([]string, 0, 1)
 		for _, topicList := range s.builder.clusterTopicsMap {
 			for _, topic := range topicList {
-				if topic.RetryDelay > 0 {
+				if topic.Delay > 0 {
 					output = append(output, topic.Name)
 				}
 			}

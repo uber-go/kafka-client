@@ -69,6 +69,34 @@ func (s *RangePartitionConsumerTestSuite) SetupTest() {
 	s.rangePartitionConsumer = newRangePartitionConsumer(s.partitionConsumer)
 }
 
+func (s *RangePartitionConsumerTestSuite) TestDelayMsg() {
+	t1 := time.Now()
+	delay := time.Millisecond
+	s.rangePartitionConsumer.topicPartition.Delay = delay
+	s.rangePartitionConsumer.delayMsg(time.Duration(0))
+	t2 := time.Now()
+	if t2.Sub(t1) < delay {
+		s.Fail("expect to sleep around " + delay.String())
+	}
+
+	// lag > delay, almost return immediately
+	t1 = time.Now()
+	s.rangePartitionConsumer.delayMsg(time.Millisecond * 2)
+	t2 = time.Now()
+	if t2.Sub(t1) > time.Millisecond {
+		s.Fail("expect no delay on msg, actual time cost is " + t2.Sub(t1).String())
+	}
+
+	// delay = 0, almost return immediately
+	t1 = time.Now()
+	s.rangePartitionConsumer.topicPartition.Delay = 0
+	s.rangePartitionConsumer.delayMsg(time.Millisecond * 2)
+	t2 = time.Now()
+	if t2.Sub(t1) > time.Millisecond {
+		s.Fail("expect no delay on msg")
+	}
+}
+
 func (s *RangePartitionConsumerTestSuite) TestOffsetNotificationTriggersMessageConsuming() {
 	s.rangePartitionConsumer.Start()
 
