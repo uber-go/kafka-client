@@ -22,9 +22,10 @@ package kafka
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/Shopify/sarama"
 	"go.uber.org/zap/zapcore"
-	"time"
 )
 
 const (
