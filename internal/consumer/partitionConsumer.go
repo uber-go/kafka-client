@@ -256,16 +256,17 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 	}
 }
 
-// delayMsg try to postpone the consumption of the msg for topic.Delay duration if the current timestamp
-// is too soon compare to the msg.Timestamp when Topic.Delay is not zero.
+// delayMsg when Topic.Delay is not zero, it try to postpone the consumption of the msg for topic.Delay duration
+// if the current timestamp is too soon compare to the msg.Timestamp.
 func (p *partitionConsumer) delayMsg(timestamp time.Time) {
 	delay := p.topicPartition.Delay
 	// check non-zero msg delay
 	if delay > 0 {
-		lag := time.Now().Sub(timestamp)
-		p.logger.Debug("delay msg deliver for topic", zap.String("topic", p.topicPartition.Name),
-			zap.Duration("sleep delay", delay-lag))
-		time.Sleep(delay - lag)
+		sleepDuration := delay + timestamp.Sub(time.Now())
+		if sleepDuration > 0 {
+			p.logger.Debug("delay msg delivery", zap.Duration("sleepDuration", sleepDuration))
+			time.Sleep(sleepDuration)
+		}
 	}
 }
 
