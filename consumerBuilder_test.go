@@ -157,7 +157,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		sort.Strings(output)
 		return output
 	}())
-	// make sure retry topic got populated to the read topic list
+	// make sure retry topic with delay gets populated to the read topic list
 	s.Equal([]string{"retry-topic"}, func() []string {
 		output := make([]string, 0, 1)
 		for _, topicList := range s.builder.clusterTopicsMap {

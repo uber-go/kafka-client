@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -70,10 +71,14 @@ func (s *RangePartitionConsumerTestSuite) SetupTest() {
 }
 
 func (s *RangePartitionConsumerTestSuite) TestDelayMsg() {
+	m := &sarama.ConsumerMessage{
+		Offset:    100,
+		Timestamp: time.Now(),
+	}
 	t1 := time.Now()
 	delay := time.Millisecond
 	s.rangePartitionConsumer.topicPartition.Delay = delay
-	s.rangePartitionConsumer.delayMsg(t1)
+	s.rangePartitionConsumer.delayMsg(m)
 	t2 := time.Now()
 	if t2.Sub(t1) < delay {
 		s.Fail("expect to sleep around " + delay.String())
@@ -81,7 +86,8 @@ func (s *RangePartitionConsumerTestSuite) TestDelayMsg() {
 
 	// lag > delay, almost return immediately
 	t1 = time.Now()
-	s.rangePartitionConsumer.delayMsg(t1.Add(time.Millisecond * -3))
+	m.Timestamp = t1.Add(time.Millisecond * -3)
+	s.rangePartitionConsumer.delayMsg(m)
 	t2 = time.Now()
 	if t2.Sub(t1) > time.Millisecond {
 		s.Fail("expect no delay on msg, actual time cost is " + t2.Sub(t1).String())
@@ -90,7 +96,8 @@ func (s *RangePartitionConsumerTestSuite) TestDelayMsg() {
 	// delay = 0, almost return immediately
 	t1 = time.Now()
 	s.rangePartitionConsumer.topicPartition.Delay = 0
-	s.rangePartitionConsumer.delayMsg(t1.Add(time.Millisecond))
+	m.Timestamp = t1.Add(time.Millisecond)
+	s.rangePartitionConsumer.delayMsg(m)
 	t2 = time.Now()
 	if t2.Sub(t1) > time.Millisecond {
 		s.Fail("expect no delay on msg")
