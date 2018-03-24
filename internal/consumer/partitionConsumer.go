@@ -238,7 +238,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 				continue
 			}
 			drain = false
-
+			p.delayMsg(m)
 			lag := time.Now().Sub(m.Timestamp)
 			p.tally.Gauge(metrics.KafkaPartitionTimeLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
@@ -252,6 +252,20 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 		case <-p.stopC:
 			p.logger.Info("partition consumer message loop stopped")
 			return
+		}
+	}
+}
+
+// delayMsg when Topic.Delay is not zero, it try to postpone the consumption of the msg for topic.Delay duration
+// if the current timestamp is too soon compare to the m.Timestamp.
+func (p *partitionConsumer) delayMsg(m *sarama.ConsumerMessage) {
+	delay := p.topicPartition.Delay
+	// check non-zero msg delay
+	if delay > 0 {
+		sleepDuration := delay + m.Timestamp.Sub(time.Now())
+		if sleepDuration > 0 {
+			p.logger.Debug("delay msg delivery", zap.Duration("sleepDuration", sleepDuration), zap.Int64("offset", m.Offset))
+			time.Sleep(sleepDuration)
 		}
 	}
 }

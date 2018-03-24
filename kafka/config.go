@@ -22,6 +22,8 @@ package kafka
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/Shopify/sarama"
 	"go.uber.org/zap/zapcore"
 )
@@ -45,6 +47,8 @@ type (
 		// If this is empty, we will get the broker list using the NameResolver
 		// TODO (gteo): remove this and rely on a NameResolver as single source for broker IP
 		BrokerList []string
+		// Delay is msg consumption delay applied on the topic.
+		Delay time.Duration
 	}
 
 	// ConsumerTopic contains information for a consumer topic.
@@ -140,6 +144,7 @@ func (c ConsumerTopic) MarshalLogObject(e zapcore.ObjectEncoder) error {
 func (t Topic) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddString("name", t.Name)
 	e.AddString("cluster", t.Cluster)
+	e.AddDuration("delay", t.Delay)
 	return nil
 }
 

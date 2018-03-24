@@ -23,6 +23,7 @@ package kafkaclient
 import (
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
@@ -67,6 +68,7 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 			RetryQ: kafka.Topic{
 				Name:    "retry-topic",
 				Cluster: "dlq-cluster",
+				Delay:   time.Microsecond,
 			},
 			DLQ: kafka.Topic{
 				Name:    "dlq-topic",
@@ -151,6 +153,19 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		output := make([]string, 0, 2)
 		for topic := range s.builder.clusterTopicSaramaProducerMap["dlq-cluster"] {
 			output = append(output, topic)
+		}
+		sort.Strings(output)
+		return output
+	}())
+	// make sure retry topic with delay gets populated to the read topic list
+	s.Equal([]string{"retry-topic"}, func() []string {
+		output := make([]string, 0, 1)
+		for _, topicList := range s.builder.clusterTopicsMap {
+			for _, topic := range topicList {
+				if topic.Delay > 0 {
+					output = append(output, topic.Name)
+				}
+			}
 		}
 		sort.Strings(output)
 		return output
