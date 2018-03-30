@@ -6,6 +6,7 @@ v0.1.4 (unreleased)
 - Fix DLQMetadata decoding to use DLQMetadataDecoder func instead of inferred decoding from TopicType.
 - Fix consumer to use noopDLQ if RetryQ or DLQ in config is empty.
 - Fix ResetOffset fails on partition rebalance.
+- Fix MarkOffsetCommitted only if offset has been updated.
 
 
 v0.1.3 (2018-03-09)
