@@ -149,3 +149,19 @@ func (s *RangePartitionConsumerTestSuite) TestOffsetNotificationTriggersMessageC
 	s.EqualValues(92, s.rangePartitionConsumer.ackMgr.CommitLevel())
 	s.rangePartitionConsumer.Stop()
 }
+
+func (s *RangePartitionConsumerTestSuite) TestResetOffsetNoHighOffsetReturnsError() {
+	s.Error(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 90, HighOffset: -1}))
+}
+
+func (s *RangePartitionConsumerTestSuite) TestResetOffsetStoppedReturnsError() {
+	close(s.rangePartitionConsumer.stopC)
+	s.Error(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 90, HighOffset: 100}))
+}
+
+func (s *RangePartitionConsumerTestSuite) TestResetOffsetWithCurrentOffsetReturnsNil() {
+	s.rangePartitionConsumer.offsetRangeLock.Lock()
+	s.rangePartitionConsumer.offsetRange = &kafka.OffsetRange{LowOffset: 90, HighOffset: 100}
+	s.rangePartitionConsumer.offsetRangeLock.Unlock()
+	s.NoError(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 95, HighOffset: 100}))
+}
