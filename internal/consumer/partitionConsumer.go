@@ -26,6 +26,7 @@ import (
 	"math"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -68,17 +69,18 @@ type (
 	}
 
 	partitionConsumer struct {
-		topicPartition topicPartition
-		msgCh          chan kafka.Message
-		ackMgr         *ackManager
-		sarama         SaramaConsumer
-		pConsumer      cluster.PartitionConsumer
-		dlq            DLQ
-		options        *Options
-		tally          tally.Scope
-		logger         *zap.Logger
-		stopC          chan struct{}
-		lifecycle      *util.RunLifecycle
+		topicPartition     topicPartition
+		msgCh              chan kafka.Message
+		ackMgr             *ackManager
+		lastComittedOffset int64
+		sarama             SaramaConsumer
+		pConsumer          cluster.PartitionConsumer
+		dlq                DLQ
+		options            *Options
+		tally              tally.Scope
+		logger             *zap.Logger
+		stopC              chan struct{}
+		lifecycle          *util.RunLifecycle
 	}
 
 	// rangePartitionConsumer consumes only a specific offset range.
@@ -141,16 +143,17 @@ func newPartitionConsumer(
 			partition: pConsumer.Partition(),
 			Topic:     topic,
 		},
-		sarama:    sarama,
-		pConsumer: pConsumer,
-		options:   options,
-		msgCh:     msgCh,
-		dlq:       dlq,
-		tally:     scope,
-		logger:    logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
-		stopC:     make(chan struct{}),
-		ackMgr:    newAckManager(maxUnAcked, scope, logger),
-		lifecycle: util.NewRunLifecycle(name),
+		sarama:             sarama,
+		pConsumer:          pConsumer,
+		options:            options,
+		msgCh:              msgCh,
+		dlq:                dlq,
+		tally:              scope,
+		logger:             logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
+		stopC:              make(chan struct{}),
+		ackMgr:             newAckManager(maxUnAcked, scope, logger),
+		lastComittedOffset: -1,
+		lifecycle:          util.NewRunLifecycle(name),
 	}
 }
 
@@ -212,20 +215,22 @@ func (p *partitionConsumer) Drain(d time.Duration) {
 }
 
 func (p *partitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) error {
-	if offsetRange.HighOffset != -1 {
-		p.logger.Warn("partition consumer unable to set highwatermark")
-	}
-	p.sarama.ResetPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, offsetRange.LowOffset, "")
-	return nil
+	// ResetOffset disabled for non range partition consumer because commitLoop assumes monotonically increasing offsets.
+	return errors.New("ResetOffset only enabled for range partition consumer")
 }
 
 // messageLoop is the message read loop for this consumer
 // TODO (venkat): maintain a pre-allocated pool of Messages
 func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
+	// if offsetRange is not nil, this is a range partition consumer, so set drain = true
 	var drain bool
 	if offsetRange != nil {
 		drain = true
 	}
+
+	// reset lastCommittedOffset to -1
+	atomic.StoreInt64(&p.lastComittedOffset, -1)
+
 	p.logger.Info("partition consumer message loop started")
 	for {
 		select {
@@ -295,12 +300,14 @@ func (p *partitionConsumer) commitLoop() {
 
 // markOffset checkpoints the latest offset
 func (p *partitionConsumer) markOffset() {
+	lastCommittedOffset := atomic.LoadInt64(&p.lastComittedOffset)
 	latestOff := p.ackMgr.CommitLevel()
-	if latestOff >= 0 {
+	if latestOff > lastCommittedOffset {
 		p.sarama.MarkPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, latestOff, "")
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
+		atomic.StoreInt64(&p.lastComittedOffset, latestOff)
 		//p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
