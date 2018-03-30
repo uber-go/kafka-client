@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -87,8 +88,10 @@ type (
 	// and acked/nacked.
 	rangePartitionConsumer struct {
 		*partitionConsumer
-		offsetRange  *kafka.OffsetRange
-		offsetRangeC chan kafka.OffsetRange
+
+		offsetRangeLock sync.RWMutex
+		offsetRange     *kafka.OffsetRange
+		offsetRangeC    chan kafka.OffsetRange
 	}
 )
 
@@ -234,8 +237,11 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			}
 
 			if drain && m.Offset != offsetRange.LowOffset {
-				p.logger.Debug("partition consumer drain message", zap.Object("offetRange", offsetRange), zap.Int64("offset", m.Offset))
+				p.logger.Debug("partition consumer drain message", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 				continue
+			}
+			if drain {
+				p.logger.Debug("partition consumer drain message complete", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 			}
 			drain = false
 			p.delayMsg(m)
@@ -295,7 +301,7 @@ func (p *partitionConsumer) markOffset() {
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
-		p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
+		//p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
 
@@ -385,6 +391,9 @@ func (p *rangePartitionConsumer) offsetLoop() {
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
+			p.offsetRangeLock.Lock()
+			p.offsetRange = &ntf
+			p.offsetRangeLock.Unlock()
 			p.logger.Debug("range partition consumer ack mgr reset started", zap.Object("offsetRange", ntf))
 			p.ackMgr.Reset() // Reset blocks until all messages that are currently inflight have been acked/nacked.
 			p.sarama.ResetPartitionOffset(p.topicPartition.Name, p.topicPartition.partition, ntf.LowOffset-1, "")
@@ -402,6 +411,27 @@ func (p *rangePartitionConsumer) offsetLoop() {
 func (p *rangePartitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) error {
 	if offsetRange.HighOffset == -1 {
 		return errors.New("rangePartitionConsumer expects a highwatermark when resetting offset")
+	}
+
+	// If it has been closed, return error.
+	select {
+	case _, ok := <-p.stopC:
+		if !ok {
+			return errors.New("unable to ResetOffset for rangePartitionConsumer has been closed")
+		}
+	case <-time.After(time.Nanosecond):
+		break
+	}
+
+	// Check that requested offset range is not already being consumed.
+	// This ensures calls to RequestOffsets is idempotent.
+	p.offsetRangeLock.RLock()
+	currentOffsetRange := p.offsetRange
+	p.offsetRangeLock.RUnlock()
+
+	if currentOffsetRange != nil && (*currentOffsetRange).HighOffset == offsetRange.HighOffset {
+		p.logger.Debug("range partition consumer already consuming specified range", zap.Object("consumingRange", currentOffsetRange), zap.Object("requestedRange", offsetRange))
+		return nil
 	}
 
 	p.offsetRangeC <- offsetRange
