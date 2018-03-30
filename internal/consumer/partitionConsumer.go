@@ -237,8 +237,11 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			}
 
 			if drain && m.Offset != offsetRange.LowOffset {
-				p.logger.Debug("partition consumer drain message", zap.Object("offetRange", offsetRange), zap.Int64("offset", m.Offset))
+				p.logger.Debug("partition consumer drain message", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 				continue
+			}
+			if drain {
+				p.logger.Debug("partition consumer drain message complete", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 			}
 			drain = false
 			p.delayMsg(m)
@@ -298,7 +301,7 @@ func (p *partitionConsumer) markOffset() {
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
-		p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
+		//p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
 
@@ -426,7 +429,8 @@ func (p *rangePartitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) erro
 	currentOffsetRange := p.offsetRange
 	p.offsetRangeLock.RUnlock()
 
-	if currentOffsetRange != nil && *currentOffsetRange == offsetRange {
+	if currentOffsetRange != nil && (*currentOffsetRange).HighOffset == offsetRange.HighOffset {
+		p.logger.Debug("range partition consumer already consuming specified range", zap.Object("consumingRange", currentOffsetRange), zap.Object("requestedRange", offsetRange))
 		return nil
 	}
 
