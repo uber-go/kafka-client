@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.4 (unreleased)
+v0.1.4 (2018-03-31)
 -------------------
 
 - Fix DLQMetadata decoding to use DLQMetadataDecoder func instead of inferred decoding from TopicType.
