@@ -300,7 +300,7 @@ func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) 
 func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config := cluster.NewConfig()
 	config.ClientID = clientID()
-	// TODO: make a cluster-wise kafkaVersion assignment. this hard coded assignment is used for enabling dlp consumer message timestamp injection.
+	// TODO: make a cluster-wise kafkaVersion assignment. this hard coded assignment is used for enabling dlq consumer message timestamp injection.
 	config.Config.Version = sarama.V0_10_2_0
 	config.Config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Config.Producer.Return.Successes = true
