@@ -268,10 +268,14 @@ func (p *partitionConsumer) delayMsg(m *sarama.ConsumerMessage) {
 	delay := p.topicPartition.Delay
 	// check non-zero msg delay
 	if delay > 0 {
-		sleepDuration := delay + m.Timestamp.Sub(time.Now())
+		curTs := time.Now()
+		sleepDuration := delay + m.Timestamp.Sub(curTs)
+		metadata, _ := p.topicPartition.DLQMetadataDecoder(m.Key)
 		if sleepDuration > 0 {
-			p.logger.Debug("delay msg delivery", zap.Duration("sleepDuration", sleepDuration), zap.Int64("offset", m.Offset))
+			p.logger.Debug("delay msg delivery", zap.Duration("sleepDuration", sleepDuration), zap.Int32("srcPartation", metadata.Partition), zap.Int64("offset", metadata.Offset), zap.String("m.Timestamp", m.Timestamp.String()), zap.String("curTs", curTs.String()))
 			time.Sleep(sleepDuration)
+		} else {
+			p.logger.Debug("no postpone", zap.Int32("srcPartation", metadata.Partition), zap.Int64("offset", metadata.Offset), zap.String("m.Timestamp", m.Timestamp.String()), zap.String("curTs", curTs.String()))
 		}
 	}
 }
