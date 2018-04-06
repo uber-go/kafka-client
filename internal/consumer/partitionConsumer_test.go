@@ -159,9 +159,10 @@ func (s *RangePartitionConsumerTestSuite) TestResetOffsetStoppedReturnsError() {
 	s.Error(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 90, HighOffset: 100}))
 }
 
-func (s *RangePartitionConsumerTestSuite) TestResetOffsetWithCurrentOffsetReturnsNil() {
+func (s *RangePartitionConsumerTestSuite) TestResetOffsetWithCurrentOffsetReturnsError() {
 	s.rangePartitionConsumer.Start()
 	s.NoError(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 95, HighOffset: 100}))
+	// existing 95-100 merge, so this returns error.
 	s.Error(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 100, HighOffset: 120}))
 	s.rangePartitionConsumer.Stop()
 }
