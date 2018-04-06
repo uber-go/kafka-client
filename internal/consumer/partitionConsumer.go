@@ -415,17 +415,6 @@ func (p *rangePartitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) erro
 		break
 	}
 
-	// Check that requested offset range is not already being consumed.
-	// This ensures calls to RequestOffsets is idempotent.
-	//p.offsetRangeLock.RLock()
-	//currentOffsetRange := p.offsetRange
-	//p.offsetRangeLock.RUnlock()
-	//
-	//if currentOffsetRange != nil && (*currentOffsetRange).HighOffset == offsetRange.HighOffset {
-	//	p.logger.Debug("range partition consumer already consuming specified range", zap.Object("consumingRange", currentOffsetRange), zap.Object("requestedRange", offsetRange))
-	//	return nil
-	//}
-
 	select {
 	case p.offsetRangeC <- offsetRange:
 		return nil
