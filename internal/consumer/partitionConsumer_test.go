@@ -160,8 +160,8 @@ func (s *RangePartitionConsumerTestSuite) TestResetOffsetStoppedReturnsError() {
 }
 
 func (s *RangePartitionConsumerTestSuite) TestResetOffsetWithCurrentOffsetReturnsNil() {
-	s.rangePartitionConsumer.offsetRangeLock.Lock()
-	s.rangePartitionConsumer.offsetRange = &kafka.OffsetRange{LowOffset: 90, HighOffset: 100}
-	s.rangePartitionConsumer.offsetRangeLock.Unlock()
+	s.rangePartitionConsumer.Start()
 	s.NoError(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 95, HighOffset: 100}))
+	s.Error(s.rangePartitionConsumer.ResetOffset(kafka.OffsetRange{LowOffset: 100, HighOffset: 120}))
+	s.rangePartitionConsumer.Stop()
 }
