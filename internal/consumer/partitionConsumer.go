@@ -247,7 +247,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			p.deliver(m)
 
 			if offsetRange != nil && m.Offset >= offsetRange.HighOffset {
-				p.logger.Info("partition consumer message loop reached range", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
+				p.logger.Info("partition consumer message loop reached range", zap.Int64("offset", m.Offset), zap.Object("offsetRange", offsetRange))
 				return
 			}
 		case <-p.stopC:
