@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -88,10 +87,7 @@ type (
 	// and acked/nacked.
 	rangePartitionConsumer struct {
 		*partitionConsumer
-
-		offsetRangeLock sync.RWMutex
-		offsetRange     *kafka.OffsetRange
-		offsetRangeC    chan kafka.OffsetRange
+		offsetRangeC chan kafka.OffsetRange
 	}
 )
 
@@ -180,7 +176,6 @@ func NewRangePartitionConsumer(
 func newRangePartitionConsumer(consumer *partitionConsumer) *rangePartitionConsumer {
 	return &rangePartitionConsumer{
 		partitionConsumer: consumer,
-		offsetRange:       nil,
 		offsetRangeC:      make(chan kafka.OffsetRange),
 	}
 }
@@ -252,7 +247,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			p.deliver(m)
 
 			if offsetRange != nil && m.Offset >= offsetRange.HighOffset {
-				p.logger.Info("partition consumer message loop reached range", zap.Object("offsetRange", offsetRange))
+				p.logger.Info("partition consumer message loop reached range", zap.Int64("offset", m.Offset), zap.Object("offsetRange", offsetRange))
 				return
 			}
 		case <-p.stopC:
@@ -391,9 +386,6 @@ func (p *rangePartitionConsumer) offsetLoop() {
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
-			p.offsetRangeLock.Lock()
-			p.offsetRange = &ntf
-			p.offsetRangeLock.Unlock()
 			p.logger.Debug("range partition consumer ack mgr reset started", zap.Object("offsetRange", ntf))
 			p.ackMgr.Reset() // Reset blocks until all messages that are currently inflight have been acked/nacked.
 			p.sarama.ResetPartitionOffset(p.topicPartition.Name, p.topicPartition.partition, ntf.LowOffset-1, "")
@@ -423,17 +415,10 @@ func (p *rangePartitionConsumer) ResetOffset(offsetRange kafka.OffsetRange) erro
 		break
 	}
 
-	// Check that requested offset range is not already being consumed.
-	// This ensures calls to RequestOffsets is idempotent.
-	p.offsetRangeLock.RLock()
-	currentOffsetRange := p.offsetRange
-	p.offsetRangeLock.RUnlock()
-
-	if currentOffsetRange != nil && (*currentOffsetRange).HighOffset == offsetRange.HighOffset {
-		p.logger.Debug("range partition consumer already consuming specified range", zap.Object("consumingRange", currentOffsetRange), zap.Object("requestedRange", offsetRange))
+	select {
+	case p.offsetRangeC <- offsetRange:
 		return nil
+	default:
+		return errors.New("failed to merge due to ongoing merge")
 	}
-
-	p.offsetRangeC <- offsetRange
-	return nil
 }
