@@ -3,7 +3,8 @@
 v0.1.5 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Fix reset of rangePartitionConsumer with existing reset does not trigger new merge.
+- Update sarama config version to use 0.10.2.
 
 
 v0.1.4 (2018-03-31)
