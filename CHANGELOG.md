@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.5 (unreleased)
+v0.1.5 (2018-04-11)
 -------------------
 
 - Fix reset of rangePartitionConsumer with existing reset does not trigger new merge.
