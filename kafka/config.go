@@ -56,7 +56,7 @@ type (
 		Topic
 		RetryQ     Topic
 		DLQ        Topic
-		MaxRetries int64
+		MaxRetries int64 // MaxRetries = -1 for infinite retries.
 	}
 
 	// ConsumerTopicList is a list of consumer topics
