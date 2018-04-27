@@ -232,3 +232,17 @@ func (s *DLQMultiplexerTestSuite) TestAdd() {
 	s.multiplexer.Add(s.msg)
 	s.Equal(1, s.dlq.backlog())
 }
+
+func (s *DLQMultiplexerTestSuite) TestAddWithInfiniteRetry() {
+	// Set multiplexer for infinity retry
+	s.multiplexer.retryCountThreshold = -1
+
+	s.multiplexer.Add(s.msg)
+	s.Equal(1, s.retry.backlog())
+	s.Equal(0, s.dlq.backlog())
+
+	s.msg.retryCount = 3
+	s.multiplexer.Add(s.msg)
+	s.Equal(2, s.retry.backlog())
+	s.Equal(0, s.dlq.backlog())
+}

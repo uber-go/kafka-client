@@ -226,11 +226,11 @@ func NewRetryDLQMultiplexer(retryTopic, dlqTopic DLQ, threshold int64) DLQ {
 
 // Add sends a kafka message to the retry topic or dlq topic depending on the retry count in the message.
 //
-// If the message RetryCount is greater than or equal to the retryCountTreshold in the multiplexer,
+// If the message RetryCount is greater than or equal to the retryCountThreshold in the multiplexer,
 // the message will be sent to the retry topic.
 // Else, it will be sent to the dlq topic.
 func (d *dlqMultiplexer) Add(m kafka.Message) error {
-	if m.RetryCount() >= d.retryCountThreshold {
+	if d.retryCountThreshold >= 0 && m.RetryCount() >= d.retryCountThreshold {
 		return d.dlqTopic.Add(m)
 	}
 	return d.retryTopic.Add(m)

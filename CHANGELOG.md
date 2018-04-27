@@ -3,7 +3,7 @@
 v0.1.6 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Allow RetryCount = -1 to signal infinite retry.
 
 
 v0.1.5 (2018-04-11)
