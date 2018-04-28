@@ -294,7 +294,9 @@ func (p *partitionConsumer) markOffset() {
 	if latestOff >= 0 {
 		p.sarama.MarkPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, latestOff, "")
 		p.tally.Gauge(metrics.KafkaPartitionCommitOffset).Update(float64(latestOff))
-		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-latestOff))
+		// Highwatermark is the next offset that will be produced.
+		// Kafka contains offsets 100 - 200, HighWaterMark=201, (consumed) latestOff=150, 200-150 = 50 = 201-1-150 unconsumed messages
+		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-1-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
 		//p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
