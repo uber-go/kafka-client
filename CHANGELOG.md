@@ -4,7 +4,7 @@ v0.1.6 (unreleased)
 -------------------
 
 - Allow RetryCount = -1 to signal infinite retry.
-
+- Fix off by one error for offset-lag metric.
 
 v0.1.5 (2018-04-11)
 -------------------
