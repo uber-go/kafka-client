@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.6 (unreleased)
+v0.1.6 (2018-04-30)
 -------------------
 
 - Allow RetryCount = -1 to signal infinite retry.
