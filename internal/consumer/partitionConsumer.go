@@ -244,6 +244,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 			p.tally.Gauge(metrics.KafkaPartitionTimeLag).Update(float64(lag))
 			p.tally.Gauge(metrics.KafkaPartitionReadOffset).Update(float64(m.Offset))
 			p.tally.Counter(metrics.KafkaPartitionMessagesIn).Inc(1)
+			p.tally.Gauge(metrics.KafkaPartitionOffsetFreshnessLag).Update(float64(p.pConsumer.HighWaterMarkOffset() - 1 - m.Offset))
 			p.deliver(m)
 
 			if offsetRange != nil && m.Offset >= offsetRange.HighOffset {
