@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.7 (unreleased)
+v0.1.7 (2018-05-01)
 -------------------
 
 - Add metric for freshness
