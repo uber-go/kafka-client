@@ -48,9 +48,10 @@ const (
 
 // Gauges
 const (
-	KafkaPartitionTimeLag      = "kafka.partition.time-lag"
-	KafkaPartitionOffsetLag    = "kafka.partition.offset-lag"
-	KafkaPartitionReadOffset   = "kafka.partition.read-offset"
-	KafkaPartitionCommitOffset = "kafka.partition.commit-offset"
-	KafkaPartitionOwned        = "kafka.partition.owned"
+	KafkaPartitionTimeLag            = "kafka.partition.time-lag"
+	KafkaPartitionOffsetLag          = "kafka.partition.offset-lag"
+	KafkaPartitionOffsetFreshnessLag = "kafka.partition.freshness-lag"
+	KafkaPartitionReadOffset         = "kafka.partition.read-offset"
+	KafkaPartitionCommitOffset       = "kafka.partition.commit-offset"
+	KafkaPartitionOwned              = "kafka.partition.owned"
 )
