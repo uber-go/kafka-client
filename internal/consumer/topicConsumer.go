@@ -21,6 +21,8 @@
 package consumer
 
 import (
+	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/bsm/sarama-cluster"
@@ -60,7 +62,13 @@ func NewTopicConsumer(
 		zap.String("topic", topic.Name),
 		zap.String("cluster", topic.Cluster),
 	)
+
+	fmt.Printf("++++++++++\n")
+	debug.PrintStack()
+	fmt.Printf("++++++++++\n")
+
 	scope = scope.Tagged(map[string]string{"topic": topic.Name, "cluster": topic.Cluster})
+	fmt.Println("##### creating topic")
 	return &TopicConsumer{
 		topic:                topic,
 		msgC:                 msgC,
@@ -75,6 +83,8 @@ func NewTopicConsumer(
 
 // Start the DLQ consumer goroutine.
 func (c *TopicConsumer) Start() error {
+	fmt.Println("##### staring topic")
+
 	if err := c.dlq.Start(); err != nil {
 		c.logger.Error("topic consumer start error", zap.Error(err))
 		return err
@@ -98,6 +108,9 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 		delete(c.partitionConsumerMap, partition)
 	}
 	c.logger.Info("topic consumer adding new partition consumer", zap.Int32("partition", partition))
+
+	fmt.Println("##### addPartitionConsumer")
+
 	p := c.topic.PartitionConsumerFactory(c.topic, c.saramaConsumer, pc, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()

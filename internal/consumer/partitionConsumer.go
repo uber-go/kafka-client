@@ -132,6 +132,7 @@ func newPartitionConsumer(
 	maxUnAcked := options.Concurrency + 2*options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	scope = scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))})
+	fmt.Println("##### creating partition")
 	return &partitionConsumer{
 		topicPartition: topicPartition{
 			partition: pConsumer.Partition(),
@@ -182,6 +183,7 @@ func newRangePartitionConsumer(consumer *partitionConsumer) *rangePartitionConsu
 
 // Start starts the consumer
 func (p *partitionConsumer) Start() error {
+	fmt.Println("##### staring partition")
 	return p.lifecycle.Start(func() error {
 		go p.messageLoop(nil)
 		go p.commitLoop()

@@ -23,13 +23,15 @@ package consumer
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/Shopify/sarama"
+
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"strings"
 )
 
 type (
@@ -58,7 +60,8 @@ func NewMultiClusterConsumer(
 	scope tally.Scope,
 	logger *zap.Logger,
 ) *MultiClusterConsumer {
-	return &MultiClusterConsumer{
+
+	ret := &MultiClusterConsumer{
 		groupName:                groupName,
 		topics:                   topics,
 		clusterConsumerMap:       clusterConsumerMap,
@@ -69,6 +72,7 @@ func NewMultiClusterConsumer(
 		logger:    logger,
 		lifecycle: util.NewRunLifecycle(groupName + "-consumer"),
 	}
+	return ret
 }
 
 // Name returns the consumer group name used by this consumer.

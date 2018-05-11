@@ -21,6 +21,7 @@
 package kafkaclient
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -104,8 +105,12 @@ func (c *consumerBuilder) Build() (kafka.Consumer, error) {
 }
 
 func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
+
+	fmt.Println("##### consumerBuilder build")
+
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
+		fmt.Println("##### consumerBuilder build, loop 1")
 		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
 		if consumerTopic.RetryQ.Name != "" && consumerTopic.RetryQ.Cluster != "" {
 			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
@@ -117,12 +122,14 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 
 	// Add additional topics that may have been injected from WithRangeConsumer option.
 	for _, topic := range c.options.OtherConsumerTopics {
+		fmt.Println("##### consumerBuilder build, loop 2")
 		c.addTopicToClusterTopicsMap(topic)
 	}
 
 	// build cluster consumer
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
+		fmt.Println("##### consumerBuilder build, loop 3")
 		uniqueTopicList := c.uniqueTopics(topicList)
 		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, uniqueTopicList)
 		if err != nil {
@@ -133,6 +140,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		// build topic consumers
 		topicConsumerMap := make(map[string]*consumer.TopicConsumer)
 		for _, topic := range uniqueTopicList {
+			fmt.Println("##### consumerBuilder build, loop 4")
 			retry, err := c.getOrAddDLQ(topic.RetryQ)
 			if err != nil {
 				c.close()
@@ -145,6 +153,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 				return nil, err
 			}
 
+			fmt.Println("##### consumerBuilder build, loop 4 - NewTopicConsumer")
 			retryDLQMultiplexer := consumer.NewRetryDLQMultiplexer(retry, dlq, topic.MaxRetries)
 			topicConsumer := consumer.NewTopicConsumer(
 				topic,
