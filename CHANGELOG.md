@@ -3,7 +3,7 @@
 v0.1.8 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Change sarama log to warn level.
 
 
 v0.1.7 (2018-05-01)

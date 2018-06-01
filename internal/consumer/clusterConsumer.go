@@ -121,7 +121,7 @@ func (c *ClusterConsumer) eventLoop() {
 		case n := <-c.consumer.Notifications():
 			c.handleNotification(n)
 		case err := <-c.consumer.Errors():
-			c.logger.Error("cluster consumer error", zap.Error(err))
+			c.logger.Warn("cluster consumer error", zap.Error(err))
 		case <-c.stopC:
 			c.shutdown()
 			c.logger.Info("cluster consumer stopped")
