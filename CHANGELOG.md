@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.8 (unreleased)
+v0.1.8 (2018-06-04)
 -------------------
 
 - Change sarama log to warn level.
