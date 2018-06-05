@@ -302,6 +302,7 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.ClientID = clientID()
 	// TODO: make a cluster-wise kafkaVersion assignment. this hard coded assignment is used for enabling dlq consumer message timestamp injection.
 	config.Config.Version = sarama.V0_10_2_0
+	config.Config.Producer.MaxMessageBytes = options.ProducerMaxMessageByes
 	config.Config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Config.Producer.Return.Successes = true
 	config.Config.Producer.Return.Errors = true
@@ -311,6 +312,7 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.Group.Mode = options.ConsumerMode
 	config.Group.Return.Notifications = true
 	config.Group.Offsets.Synchronization.DwellTime = options.RebalanceDwellTime
+	config.Consumer.Fetch.Default = options.FetchDefaultBytes
 	config.Consumer.Return.Errors = true
 	config.Consumer.Offsets.CommitInterval = options.OffsetCommitInterval
 	config.Consumer.Offsets.Initial = options.OffsetPolicy
