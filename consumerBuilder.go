@@ -301,8 +301,8 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config := cluster.NewConfig()
 	config.ClientID = clientID()
 	// TODO: make a cluster-wise kafkaVersion assignment. this hard coded assignment is used for enabling dlq consumer message timestamp injection.
-	config.Net.TLS.Enable = options.TLS.Enable;
-	config.Net.TLS.Config = options.TLS.Config;
+	config.Net.TLS.Enable = options.TLS.Enable
+	config.Net.TLS.Config = options.TLS.Config
 	config.Config.Version = sarama.V0_10_2_0
 	config.Config.Producer.MaxMessageBytes = options.ProducerMaxMessageByes
 	config.Config.Producer.RequiredAcks = sarama.WaitForAll

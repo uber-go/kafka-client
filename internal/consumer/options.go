@@ -21,11 +21,11 @@
 package consumer
 
 import (
+	"crypto/tls"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
-	"crypto/tls"
 )
 
 type (

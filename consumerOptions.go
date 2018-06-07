@@ -21,9 +21,10 @@
 package kafkaclient
 
 import (
+	"crypto/tls"
+
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
-	"crypto/tls"
 )
 
 type (

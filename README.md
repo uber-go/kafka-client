@@ -11,6 +11,9 @@ A high level Go client library for Apache Kafka that provides the following prim
 
 This library is in alpha. APIs are subject to change, use at your own risk
 
+This library is used in production internally at Uber, but we are semi-actively porting the internal implementation to this OSS library, hence API stability cannot be guaranteed at this time.
+That being said, we will adhere to [semantic versioning](https://semver.org/) so you can safely pin to a version range.
+
 ## Contributing
 If you are interested in contributing, please sign the [License Agreement](https://cla-assistant.io/uber-go/kafka-client) and see our [development guide](https://github.com/uber-go/kafka-client/blob/master/docs/DEVELOPMENT-GUIDE.md)
 
