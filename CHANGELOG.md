@@ -5,6 +5,7 @@ v0.1.9 (unreleased)
 
 - Tune producer max message bytes to 10mb.
 - Tune consumer default fetch bytes to 10mb.
+- Add optional TLS configuration.
 
 
 v0.1.8 (2018-06-04)

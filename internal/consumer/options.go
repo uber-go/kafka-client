@@ -21,6 +21,7 @@
 package consumer
 
 import (
+	"crypto/tls"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -41,6 +42,16 @@ type (
 		ProducerMaxMessageByes int
 		FetchDefaultBytes      int32
 		OtherConsumerTopics    []Topic
+		// TLS struct is copied from sarama.Config but we retain an additional layer of indirection in order
+		// to retain the ability to decouple this library from sarama in the future.
+		TLS struct {
+			// Whether or not to use TLS when connecting to the broker
+			// (defaults to false).
+			Enable bool
+			// The TLS configuration to use for secure connections if
+			// enabled (defaults to nil).
+			Config *tls.Config
+		}
 	}
 )
 
@@ -58,5 +69,12 @@ func DefaultOptions() *Options {
 		FetchDefaultBytes:      10 * 1024 * 1024, // 10MB.
 		ProducerMaxMessageByes: 10 * 1024 * 1024, // 10MB
 		OtherConsumerTopics:    make([]Topic, 0, 10),
+		TLS: struct {
+			Enable bool
+			Config *tls.Config
+		}{
+			Enable: false,
+			Config: nil,
+		},
 	}
 }

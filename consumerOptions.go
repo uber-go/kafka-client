@@ -21,6 +21,8 @@
 package kafkaclient
 
 import (
+	"crypto/tls"
+
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 )
@@ -41,6 +43,11 @@ type (
 
 	retryTopicsOptions struct {
 		topicList kafka.ConsumerTopicList
+	}
+
+	tlsOption struct {
+		enable bool
+		config *tls.Config
 	}
 )
 
@@ -94,4 +101,17 @@ func (o *retryTopicsOptions) apply(opts *consumer.Options) {
 			PartitionConsumerFactory: consumer.NewPartitionConsumer,
 		})
 	}
+}
+
+// WithTLS enables TLS for broker communication with the provided tls.Config.
+func WithTLS(config *tls.Config) ConsumerOption {
+	return &tlsOption{
+		enable: true,
+		config: config,
+	}
+}
+
+func (o *tlsOption) apply(opts *consumer.Options) {
+	opts.TLS.Enable = o.enable
+	opts.TLS.Config = o.config
 }

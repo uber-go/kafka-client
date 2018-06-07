@@ -21,6 +21,7 @@
 package kafkaclient
 
 import (
+	"crypto/tls"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,4 +47,13 @@ func TestRetryConsumerOptions(t *testing.T) {
 	options := consumer.DefaultOptions()
 	consumerOption.apply(options)
 	assert.Equal(t, 2, len(options.OtherConsumerTopics))
+}
+
+func TestTLSOption(t *testing.T) {
+	tlsConfig := new(tls.Config)
+	consumerOption := WithTLS(tlsConfig)
+	options := consumer.DefaultOptions()
+	consumerOption.apply(options)
+	assert.True(t, options.TLS.Enable)
+	assert.NotNil(t, options.TLS.Config)
 }
