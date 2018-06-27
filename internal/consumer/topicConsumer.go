@@ -97,7 +97,7 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 		old.Stop()
 		delete(c.partitionConsumerMap, partition)
 	}
-	c.logger.Info("topic consumer adding new partition consumer", zap.Int32("partition", partition))
+	c.logger.Debug("topic consumer adding new partition consumer", zap.Int32("partition", partition))
 	p := c.topic.PartitionConsumerFactory(c.topic, c.saramaConsumer, pc, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()

@@ -217,7 +217,7 @@ func (p *partitionConsumer) Start() error {
 		go p.messageLoop(nil)
 		go p.commitLoop()
 		p.tally.Counter(metrics.KafkaPartitionStarted).Inc(1)
-		p.logger.Info("partition consumer started", zap.Object("topicPartition", p.topicPartition))
+		p.logger.Debug("partition consumer started", zap.Object("topicPartition", p.topicPartition))
 		return nil
 	})
 }
@@ -252,12 +252,12 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 	if offsetRange != nil {
 		drain = true
 	}
-	p.logger.Info("partition consumer message loop started")
+	p.logger.Debug("partition consumer message loop started")
 	for {
 		select {
 		case m, ok := <-p.pConsumer.Messages():
 			if !ok {
-				p.logger.Info("partition consumer message channel closed")
+				p.logger.Debug("partition consumer message channel closed")
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
@@ -283,7 +283,7 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 				return
 			}
 		case <-p.stopC:
-			p.logger.Info("partition consumer message loop stopped")
+			p.logger.Debug("partition consumer message loop stopped")
 			return
 		}
 	}
@@ -306,7 +306,7 @@ func (p *partitionConsumer) delayMsg(m *sarama.ConsumerMessage) {
 // commitLoop periodically checkpoints the offsets with broker
 func (p *partitionConsumer) commitLoop() {
 	ticker := time.NewTicker(p.options.MaxProcessingTime)
-	p.logger.Info("partition consumer commit loop started")
+	p.logger.Debug("partition consumer commit loop started")
 	defer ticker.Stop()
 	for {
 		select {
@@ -314,7 +314,7 @@ func (p *partitionConsumer) commitLoop() {
 			p.markOffset()
 		case <-p.stopC:
 			p.markOffset()
-			p.logger.Info("partition consumer commit loop stopped")
+			p.logger.Debug("partition consumer commit loop stopped")
 			return
 		}
 	}
@@ -389,7 +389,7 @@ func (p *partitionConsumer) stop(d time.Duration) {
 		p.markOffset()
 		p.pConsumer.Close()
 		p.tally.Counter(metrics.KafkaPartitionStopped).Inc(1)
-		p.logger.Info("partition consumer stopped", zap.Object("topicPartition", p.topicPartition))
+		p.logger.Debug("partition consumer stopped", zap.Object("topicPartition", p.topicPartition))
 	})
 }
 
@@ -413,13 +413,13 @@ func (p *rangePartitionConsumer) Start() error {
 }
 
 func (p *rangePartitionConsumer) offsetLoop() {
-	p.logger.Info("range partition consumer offset loop started", zap.Object("topicPartition", p.topicPartition))
+	p.logger.Debug("range partition consumer offset loop started", zap.Object("topicPartition", p.topicPartition))
 	for {
 		select {
 		case ntf, ok := <-p.offsetRangeC:
-			p.logger.Debug("range partition consumer received offset range", zap.Object("topicPartition", p.topicPartition), zap.Object("offsetRange", ntf))
+			p.logger.Info("range partition consumer received offset range", zap.Object("topicPartition", p.topicPartition), zap.Object("offsetRange", ntf))
 			if !ok {
-				p.logger.Info("range partition consumer offset range channel closed")
+				p.logger.Debug("range partition consumer offset range channel closed")
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
@@ -428,7 +428,7 @@ func (p *rangePartitionConsumer) offsetLoop() {
 			p.sarama.ResetPartitionOffset(p.topicPartition.Name, p.topicPartition.partition, ntf.LowOffset-1, "")
 			p.logger.Debug("range partition consumer ack mgr reset completed", zap.Object("offsetRange", ntf))
 			p.messageLoop(&ntf)
-			p.logger.Debug("range partition consumer message loop completed", zap.Object("offsetRange", ntf))
+			p.logger.Info("range partition consumer message loop completed", zap.Object("offsetRange", ntf))
 		case <-p.stopC:
 			p.logger.Info("range partition consumer offset loop stopped", zap.Object("topicPartition", p.topicPartition))
 			return
