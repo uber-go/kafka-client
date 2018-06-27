@@ -106,7 +106,13 @@ func (c *consumerBuilder) Build() (kafka.Consumer, error) {
 func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
+		// first, add TopicConsumer for original topic.
+		// disabling offset commit only applies for the original topic.
+		partitionConsumerFactory := consumer.NewPartitionConsumer
+		if !c.kafkaConfig.Offsets.Commits.Enabled {
+			partitionConsumerFactory = consumer.NewPartitionConsumerWithoutCommit
+		}
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: partitionConsumerFactory})
 		if consumerTopic.RetryQ.Name != "" && consumerTopic.RetryQ.Cluster != "" {
 			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
 		}
