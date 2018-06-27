@@ -73,6 +73,7 @@ type (
 		sarama         SaramaConsumer
 		pConsumer      cluster.PartitionConsumer
 		dlq            DLQ
+		commitEnabled  bool
 		options        *Options
 		tally          tally.Scope
 		logger         *zap.Logger
@@ -115,6 +116,31 @@ func NewPartitionConsumer(
 		options,
 		msgCh,
 		dlq,
+		true,
+		scope,
+		logger,
+	)
+}
+
+// NewPartitionConsumerWithoutCommit returns a kafka consumer that can
+// read messages from a given [ topic, partition ] tuple where commits are disabled.
+func NewPartitionConsumerWithoutCommit(
+	topic Topic,
+	sarama SaramaConsumer,
+	pConsumer cluster.PartitionConsumer,
+	options *Options,
+	msgCh chan kafka.Message,
+	dlq DLQ,
+	scope tally.Scope,
+	logger *zap.Logger) PartitionConsumer {
+	return newPartitionConsumer(
+		topic,
+		sarama,
+		pConsumer,
+		options,
+		msgCh,
+		dlq,
+		false,
 		scope,
 		logger,
 	)
@@ -127,8 +153,10 @@ func newPartitionConsumer(
 	options *Options,
 	msgCh chan kafka.Message,
 	dlq DLQ,
+	commitEnabled bool,
 	scope tally.Scope,
-	logger *zap.Logger) *partitionConsumer {
+	logger *zap.Logger,
+) *partitionConsumer {
 	maxUnAcked := options.Concurrency + 2*options.RcvBufferSize + 1
 	name := fmt.Sprintf("%v-partition-%v", pConsumer.Topic(), pConsumer.Partition())
 	scope = scope.Tagged(map[string]string{"partition": strconv.Itoa(int(pConsumer.Partition()))})
@@ -137,21 +165,23 @@ func newPartitionConsumer(
 			partition: pConsumer.Partition(),
 			Topic:     topic,
 		},
-		sarama:    sarama,
-		pConsumer: pConsumer,
-		options:   options,
-		msgCh:     msgCh,
-		dlq:       dlq,
-		tally:     scope,
-		logger:    logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
-		stopC:     make(chan struct{}),
-		ackMgr:    newAckManager(maxUnAcked, scope, logger),
-		lifecycle: util.NewRunLifecycle(name),
+		sarama:        sarama,
+		pConsumer:     pConsumer,
+		options:       options,
+		msgCh:         msgCh,
+		dlq:           dlq,
+		commitEnabled: commitEnabled,
+		tally:         scope,
+		logger:        logger.With(zap.String("cluster", topic.Cluster), zap.String("topic", topic.Name), zap.Int32("partition", pConsumer.Partition())),
+		stopC:         make(chan struct{}),
+		ackMgr:        newAckManager(maxUnAcked, scope, logger),
+		lifecycle:     util.NewRunLifecycle(name),
 	}
 }
 
 // NewRangePartitionConsumer returns a kafka consumer that can
-// read messages from a given [ topic, partition ] tuple
+// read messages from a given [ topic, partition ] tuple.
+// Commits are always enabled.
 func NewRangePartitionConsumer(
 	topic Topic,
 	sarama SaramaConsumer,
@@ -168,6 +198,7 @@ func NewRangePartitionConsumer(
 		options,
 		msgCh,
 		dlq,
+		true,
 		scope,
 		logger,
 	))
@@ -291,6 +322,9 @@ func (p *partitionConsumer) commitLoop() {
 
 // markOffset checkpoints the latest offset
 func (p *partitionConsumer) markOffset() {
+	if !p.commitEnabled {
+		return
+	}
 	latestOff := p.ackMgr.CommitLevel()
 	if latestOff >= 0 {
 		p.sarama.MarkPartitionOffset(p.topicPartition.Topic.Name, p.topicPartition.partition, latestOff, "")

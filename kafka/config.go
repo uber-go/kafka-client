@@ -82,10 +82,13 @@ type (
 				// committed. Use OffsetNewest for high watermark and OffsetOldest for
 				// low watermark. Defaults to OffsetOldest.
 				Offset int64
-				// Reset should be set to true if you wish for the consumer to overwrite
-				// an existing checkpoint with the offset specified in `Offset`.
-				// The overwritten offset cannot be recovered.
-				Reset bool
+			}
+
+			// Commits a policy for committing consumer offsets to Kafka.
+			Commits struct {
+				// Enabled if you want the library to commit offsets on your behalf.
+				// Defaults to true.
+				Enabled bool
 			}
 		}
 
@@ -102,7 +105,7 @@ func NewConsumerConfig(groupName string, topicList ConsumerTopicList) *ConsumerC
 	cfg.GroupName = groupName
 	cfg.TopicList = topicList
 	cfg.Offsets.Initial.Offset = OffsetOldest
-	cfg.Offsets.Initial.Reset = false
+	cfg.Offsets.Commits.Enabled = true
 	cfg.Concurrency = 1
 	return cfg
 }
@@ -114,7 +117,10 @@ func (c ConsumerConfig) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddObject("offset", zapcore.ObjectMarshalerFunc(func(ee zapcore.ObjectEncoder) error {
 		ee.AddObject("initial", zapcore.ObjectMarshalerFunc(func(eee zapcore.ObjectEncoder) error {
 			eee.AddInt64("offset", c.Offsets.Initial.Offset)
-			eee.AddBool("reset", c.Offsets.Initial.Reset)
+			return nil
+		}))
+		ee.AddObject("commits", zapcore.ObjectMarshalerFunc(func(eee zapcore.ObjectEncoder) error {
+			eee.AddBool("enabled", c.Offsets.Commits.Enabled)
 			return nil
 		}))
 		return nil

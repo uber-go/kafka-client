@@ -64,6 +64,7 @@ func (s *RangePartitionConsumerTestSuite) SetupTest() {
 		opts,
 		s.msgC,
 		nil,
+		true,
 		tally.NoopScope,
 		l,
 	)

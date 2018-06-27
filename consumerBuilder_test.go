@@ -190,6 +190,13 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 	}())
 }
 
+func (s *ConsumerBuilderTestSuite) TestBuildConsumersWithCommitDisabled() {
+	s.builder.kafkaConfig.Offsets.Commits.Enabled = false
+	consumer, err := s.builder.build()
+	s.NoError(err)
+	s.NotNil(consumer)
+}
+
 func (m *mockSaramaConsumerConstructor) f(brokers []string, _ string, topics []string, _ *cluster.Config) (consumer.SaramaConsumer, error) {
 	m.clusterTopicMap[brokers[0]] = topics
 	return nil, nil
