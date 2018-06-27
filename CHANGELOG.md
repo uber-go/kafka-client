@@ -7,6 +7,7 @@ v0.1.9 (unreleased)
 - Tune consumer default fetch bytes to 10mb.
 - Remove Offset.Initial.Reset config since it is unused.
 - Add Offset.Commit.Enabled config to enable auto offset commit.
+- Tune partition consumer logs to debug level
 
 
 v0.1.8 (2018-06-04)
