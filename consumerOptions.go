@@ -31,10 +31,6 @@ type (
 		apply(*consumer.Options)
 	}
 
-	rangeConsumersOption struct {
-		topicList kafka.ConsumerTopicList
-	}
-
 	dlqTopicsOptions struct {
 		topicList kafka.ConsumerTopicList
 	}
@@ -43,24 +39,6 @@ type (
 		topicList kafka.ConsumerTopicList
 	}
 )
-
-// WithRangeConsumers creates a range consumer for the specified consumer topics.
-// DEPRECATED
-func WithRangeConsumers(topicList kafka.ConsumerTopicList) ConsumerOption {
-	return &rangeConsumersOption{
-		topicList: topicList,
-	}
-}
-
-func (o *rangeConsumersOption) apply(opts *consumer.Options) {
-	for _, topic := range o.topicList {
-		opts.OtherConsumerTopics = append(opts.OtherConsumerTopics, consumer.Topic{
-			ConsumerTopic:            topic,
-			DLQMetadataDecoder:       consumer.NoopDLQMetadataDecoder,
-			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
-		})
-	}
-}
 
 // WithDLQTopics creates a range consumer for the specified consumer DLQ topics.
 func WithDLQTopics(topicList kafka.ConsumerTopicList) ConsumerOption {

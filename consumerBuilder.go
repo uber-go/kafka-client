@@ -33,7 +33,7 @@ import (
 
 type (
 	consumerBuilder struct {
-		clusterTopicsMap map[string][]consumer.Topic
+		clusterTopicsMap map[consumerCluster][]consumer.Topic
 
 		clusterSaramaClientMap        map[string]sarama.Client
 		clusterSaramaConsumerMap      map[string]consumer.SaramaConsumer
@@ -51,6 +51,11 @@ type (
 		saramaConfig        *sarama.Config
 		saramaClusterConfig *cluster.Config
 	}
+
+	consumerCluster struct {
+		name         string
+		offsetPolicy int64
+	}
 )
 
 func newConsumerBuilder(
@@ -62,7 +67,7 @@ func newConsumerBuilder(
 	consumerOptions := buildOptions(config, opts...)
 	saramaClusterConfig := buildSaramaConfig(consumerOptions)
 	return &consumerBuilder{
-		clusterTopicsMap:              make(map[string][]consumer.Topic),
+		clusterTopicsMap:              make(map[consumerCluster][]consumer.Topic),
 		clusterSaramaClientMap:        make(map[string]sarama.Client),
 		clusterSaramaConsumerMap:      make(map[string]consumer.SaramaConsumer),
 		clusterTopicSaramaProducerMap: make(map[string]map[string]sarama.AsyncProducer),
@@ -82,13 +87,13 @@ func newConsumerBuilder(
 	}
 }
 
-func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic) {
-	topicList, ok := c.clusterTopicsMap[topic.Topic.Cluster]
+func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic, offsetPolicy int64) {
+	topicList, ok := c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}]
 	if !ok {
 		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
-	c.clusterTopicsMap[topic.Topic.Cluster] = topicList
+	c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}] = topicList
 }
 
 func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []consumer.Topic) []string {
@@ -112,25 +117,25 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		if !c.kafkaConfig.Offsets.Commits.Enabled {
 			partitionConsumerFactory = consumer.NewPartitionConsumerWithoutCommit
 		}
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: partitionConsumerFactory})
+		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: partitionConsumerFactory}, c.kafkaConfig.Offsets.Initial.Offset)
 		if consumerTopic.RetryQ.Name != "" && consumerTopic.RetryQ.Cluster != "" {
-			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer})
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer}, sarama.OffsetOldest)
 		}
 		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
-			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer})
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer}, sarama.OffsetOldest)
 		}
 	}
 
 	// Add additional topics that may have been injected from WithRangeConsumer option.
 	for _, topic := range c.options.OtherConsumerTopics {
-		c.addTopicToClusterTopicsMap(topic)
+		c.addTopicToClusterTopicsMap(topic, sarama.OffsetOldest) // OtherConsumerTopics are retry or dlq so default to offset oldest.
 	}
 
 	// build cluster consumer
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
 		uniqueTopicList := c.uniqueTopics(topicList)
-		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, uniqueTopicList)
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster.name, uniqueTopicList, cluster.offsetPolicy)
 		if err != nil {
 			c.close()
 			return nil, err
@@ -163,8 +168,8 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 			)
 			topicConsumerMap[topic.Name] = topicConsumer
 		}
-		clusterConsumerMap[cluster] = consumer.NewClusterConsumer(
-			cluster,
+		clusterConsumerMap[cluster.name] = consumer.NewClusterConsumer(
+			cluster.name,
 			saramaConsumer,
 			topicConsumerMap,
 			c.scope,
@@ -251,17 +256,20 @@ func (c *consumerBuilder) close() {
 	}
 }
 
-func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []consumer.Topic) (consumer.SaramaConsumer, error) {
+func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []consumer.Topic, offsetPolicy int64) (consumer.SaramaConsumer, error) {
 	brokerList, err := c.resolver.ResolveIPForCluster(cluster)
 	if err != nil {
 		return nil, err
 	}
 
+	saramaConfig := *c.saramaClusterConfig
+	saramaConfig.Consumer.Offsets.Initial = offsetPolicy
+
 	saramaConsumer, err := c.constructors.NewSaramaConsumer(
 		brokerList,
 		c.kafkaConfig.GroupName,
 		c.topicConsumerBuilderToTopicNames(topicList),
-		c.saramaClusterConfig,
+		&saramaConfig,
 	)
 	if err != nil {
 		return nil, err

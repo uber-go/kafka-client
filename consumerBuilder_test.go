@@ -125,7 +125,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 	s.Equal([]string{"cluster", "dlq-cluster"}, func() []string {
 		output := make([]string, 0, 3)
 		for cluster := range s.builder.clusterTopicsMap {
-			output = append(output, cluster)
+			output = append(output, cluster.name)
 		}
 		sort.Strings(output)
 		return output
