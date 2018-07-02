@@ -53,7 +53,7 @@ type (
 	}
 
 	consumerCluster struct {
-		name         string
+		name          string
 		initialOffset int64
 	}
 )
