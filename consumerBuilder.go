@@ -54,7 +54,7 @@ type (
 
 	consumerCluster struct {
 		name         string
-		offsetPolicy int64
+		initialOffset int64
 	}
 )
 
@@ -135,7 +135,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
 		uniqueTopicList := c.uniqueTopics(topicList)
-		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster.name, uniqueTopicList, cluster.offsetPolicy)
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster.name, uniqueTopicList, cluster.initialOffset)
 		if err != nil {
 			c.close()
 			return nil, err
