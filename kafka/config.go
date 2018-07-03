@@ -88,6 +88,8 @@ type (
 			Commits struct {
 				// Enabled if you want the library to commit offsets on your behalf.
 				// Defaults to true.
+				//
+				// The retry and dlq topic commit will always be committed for you since those topics are abstracted away from you.
 				Enabled bool
 			}
 		}
