@@ -52,8 +52,11 @@ type (
 		saramaClusterConfig *cluster.Config
 	}
 
+	// consumerCluster wraps a consumer cluster name and relevant config for consuming from that cluster.
 	consumerCluster struct {
-		name          string
+		// name is the name of the cluster.
+		name string
+		// initialOffset is the initial offset of the cluster if there is no previously checkpointed offset.
 		initialOffset int64
 	}
 )
