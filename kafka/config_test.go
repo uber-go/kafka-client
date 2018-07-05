@@ -44,36 +44,20 @@ func (s *ConsumerConfigTestSuite) SetupTest() {
 		Topic: Topic{
 			Name:    "topic1",
 			Cluster: "cluster1",
-			BrokerList: []string{
-				"broker1",
-				"broker2",
-			},
 		},
 		DLQ: Topic{
 			Name:    "dlq_topic1",
 			Cluster: "dlq_cluster1",
-			BrokerList: []string{
-				"dlq_broker1",
-				"dlq_broker2",
-			},
 		},
 	}
 	s.topic2 = ConsumerTopic{
 		Topic: Topic{
 			Name:    "topic2",
 			Cluster: "cluster2",
-			BrokerList: []string{
-				"broker1",
-				"broker2",
-			},
 		},
 		DLQ: Topic{
 			Name:    "dlq_topic2",
 			Cluster: "dlq_cluster1",
-			BrokerList: []string{
-				"dlq_broker1",
-				"dlq_broker2",
-			},
 		},
 	}
 	s.config = ConsumerConfig{

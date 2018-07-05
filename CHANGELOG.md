@@ -8,6 +8,7 @@ v0.1.9 (unreleased)
 - Remove Offset.Initial.Reset config since it is unused.
 - Add Offset.Commit.Enabled config to enable auto offset commit.
 - Tune partition consumer logs to debug level
+- Remove Topic.BrokerList since it was unused in favor of NameResolver to resolve broker list.
 
 
 v0.1.8 (2018-06-04)

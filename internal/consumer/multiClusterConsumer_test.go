@@ -46,14 +46,12 @@ var _ kafka.Consumer = (*MultiClusterConsumer)(nil)
 func (s *MultiClusterConsumerTestSuite) SetupTest() {
 	topic := kafka.ConsumerTopic{
 		Topic: kafka.Topic{
-			Name:       "unit-test",
-			Cluster:    "production-cluster",
-			BrokerList: nil,
+			Name:    "unit-test",
+			Cluster: "production-cluster",
 		},
 		DLQ: kafka.Topic{
-			Name:       "unit-test-dlq",
-			Cluster:    "dlq-cluster",
-			BrokerList: nil,
+			Name:    "unit-test-dlq",
+			Cluster: "dlq-cluster",
 		},
 	}
 	s.topics = []kafka.ConsumerTopic{topic}
