@@ -1,6 +1,6 @@
 # Changelog
 
-v0.1.9 (unreleased)
+v0.2.0 (2018-07-06)
 -------------------
 
 - Tune producer max message bytes to 10mb.
