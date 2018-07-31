@@ -141,7 +141,7 @@ func (m *Message) Nack() error {
 	return ctx.ackMgr.Nack(ctx.ackID)
 }
 
-// Nack negatively acknowledges the message by sending it directly to the DLQ.
+// NackToDLQ negatively acknowledges the message by sending it directly to the DLQ.
 // This method will *block* until enqueue to the dlq succeeds
 func (m *Message) NackToDLQ() error {
 	ctx := &m.ctx
