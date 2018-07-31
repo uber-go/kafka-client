@@ -204,6 +204,10 @@ func (m *mockMessage) Nack() error {
 	return m.nackErr
 }
 
+func (m *mockMessage) NackToDLQ() error {
+	return m.nackErr
+}
+
 func newMockPartitionedConsumer(topic string, id int32, beginOffset int64, rcvBufSize int) *mockPartitionedConsumer {
 	return &mockPartitionedConsumer{
 		id:          id,
@@ -370,7 +374,7 @@ func (d *mockDLQProducer) Stop() {
 	atomic.AddInt32(&d.stopped, 1)
 }
 
-func (d *mockDLQProducer) Add(m kafka.Message) error {
+func (d *mockDLQProducer) Add(m kafka.Message, qType ...ErrorQType) error {
 	d.Lock()
 	defer d.Unlock()
 	d.messages = append(d.messages, m)

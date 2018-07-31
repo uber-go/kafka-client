@@ -36,6 +36,11 @@ import (
 var (
 	errShutdown = errors.New("error consumer shutdown")
 	errNoDLQ    = errors.New("no persistent dlq configured")
+
+	// RetryQErrorQType is the error queue for the retryQ.
+	RetryQErrorQType ErrorQType = "retryQ"
+	// DLQErrorQType is the error queue for DLQ.
+	DLQErrorQType ErrorQType = "DLQ"
 )
 
 type (
@@ -49,8 +54,11 @@ type (
 		Stop()
 		// Add adds the given message to DLQ.
 		// This is a synchronous call and will block until sending is successful.
-		Add(m kafka.Message) error
+		Add(m kafka.Message, qTypes ...ErrorQType) error
 	}
+
+	// ErrorQType is the queue type to send messages to when using the DLQ interface.
+	ErrorQType string
 
 	// dlqMultiplexer is an implementation of DLQ which sends messages to a RetryQ for a configured number of times before
 	// sending messages to thq DLQ.
@@ -128,7 +136,9 @@ func (d *bufferedErrorTopic) Stop() {
 	})
 }
 
-func (d *bufferedErrorTopic) Add(m kafka.Message) error {
+// Add a message to the buffer for the error topic.
+// ErrorQType is ignored.
+func (d *bufferedErrorTopic) Add(m kafka.Message, qTypes ...ErrorQType) error {
 	metadata := &DLQMetadata{
 		RetryCount:  m.RetryCount() + 1,
 		Data:        m.Key(),
@@ -229,7 +239,18 @@ func NewRetryDLQMultiplexer(retryTopic, dlqTopic DLQ, threshold int64) DLQ {
 // If the message RetryCount is greater than or equal to the retryCountThreshold in the multiplexer,
 // the message will be sent to the retry topic.
 // Else, it will be sent to the dlq topic.
-func (d *dlqMultiplexer) Add(m kafka.Message) error {
+func (d *dlqMultiplexer) Add(m kafka.Message, qtypes ...ErrorQType) error {
+	// If qtypes is specified, use the first specified qtype as queue target
+	if len(qtypes) > 0 {
+		switch qtypes[0] {
+		case DLQErrorQType:
+			return d.dlqTopic.Add(m)
+		default:
+			return d.retryTopic.Add(m)
+		}
+	}
+
+	// Queue type is not specified so use the retry count to determine queue target.
 	if d.retryCountThreshold >= 0 && m.RetryCount() >= d.retryCountThreshold {
 		return d.dlqTopic.Add(m)
 	}
@@ -268,6 +289,6 @@ func (d noopDLQ) Start() error {
 func (d noopDLQ) Stop() {}
 
 // Add returns errNoDLQ because there is no kafka topic backing it.
-func (d noopDLQ) Add(m kafka.Message) error {
+func (d noopDLQ) Add(m kafka.Message, qtypes ...ErrorQType) error {
 	return errNoDLQ
 }

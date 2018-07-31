@@ -80,6 +80,8 @@ type (
 		Ack() error
 		// Nack marks the message processing as failed and the message will be retried or sent to DLQ.
 		Nack() error
+		// NackToDLQ marks the message processing as failed and sends it immediately to DLQ.
+		NackToDLQ() error
 	}
 
 	// NameResolver is an interface that will be used by the consumer library to resolve

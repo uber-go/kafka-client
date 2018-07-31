@@ -141,6 +141,16 @@ func (m *Message) Nack() error {
 	return ctx.ackMgr.Nack(ctx.ackID)
 }
 
+// NackToDLQ negatively acknowledges the message by sending it directly to the DLQ.
+// This method will *block* until enqueue to the dlq succeeds
+func (m *Message) NackToDLQ() error {
+	ctx := &m.ctx
+	if err := ctx.dlq.Add(m, DLQErrorQType); err != nil {
+		return err
+	}
+	return ctx.ackMgr.Nack(ctx.ackID)
+}
+
 // MarshalLogObject implements zapcore.ObjectMarshaler for structured logging.
 func (m *Message) MarshalLogObject(e zapcore.ObjectEncoder) error {
 	e.AddString("topic", m.Topic())
