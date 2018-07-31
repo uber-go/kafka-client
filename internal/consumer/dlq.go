@@ -57,6 +57,7 @@ type (
 		Add(m kafka.Message, qTypes ...ErrorQType) error
 	}
 
+	// ErrorQType is the queue type to send messages to when using the DLQ interface.
 	ErrorQType string
 
 	// dlqMultiplexer is an implementation of DLQ which sends messages to a RetryQ for a configured number of times before
