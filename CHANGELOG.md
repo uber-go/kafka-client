@@ -3,7 +3,7 @@
 v0.2.1 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Add method to nack to DLQ.
 
 
 v0.2.0 (2018-07-06)
