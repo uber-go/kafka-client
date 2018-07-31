@@ -40,7 +40,7 @@ var (
 	// RetryQErrorQType is the error queue for the retryQ.
 	RetryQErrorQType ErrorQType = "retryQ"
 	// DLQErrorQType is the error queue for DLQ.
-	DLQErrorQType    ErrorQType = "DLQ"
+	DLQErrorQType ErrorQType = "DLQ"
 )
 
 type (
