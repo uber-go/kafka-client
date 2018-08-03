@@ -257,17 +257,19 @@ func (p *partitionConsumer) messageLoop(offsetRange *kafka.OffsetRange) {
 		select {
 		case m, ok := <-p.pConsumer.Messages():
 			if !ok {
-				p.logger.Debug("partition consumer message channel closed")
+				p.logger.Info("partition consumer message channel closed")
 				p.Drain(p.options.MaxProcessingTime)
 				return
 			}
 
+			p.logger.Info("kafka-client message-in", zap.Int64("offset", m.Offset), zap.Int32("partition", m.Partition))
+
 			if drain && m.Offset != offsetRange.LowOffset {
-				p.logger.Debug("partition consumer drain message", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
+				p.logger.Error("partition consumer drain message", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 				continue
 			}
 			if drain {
-				p.logger.Debug("partition consumer drain message complete", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
+				p.logger.Error("partition consumer drain message complete", zap.Object("offsetRange", offsetRange), zap.Int64("offset", m.Offset))
 			}
 			drain = false
 			p.delayMsg(m)
@@ -354,6 +356,7 @@ func (p *partitionConsumer) deliver(scm *sarama.ConsumerMessage) {
 	msg := newMessage(scm, ackID, p.ackMgr, p.dlq, *metadata)
 	select {
 	case p.msgCh <- msg:
+		p.logger.Info("kafka-client message-out", zap.Int64("offset", msg.Offset()), zap.Int32("partition", msg.Partition()))
 		return
 	case <-p.stopC:
 		return
