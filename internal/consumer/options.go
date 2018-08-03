@@ -55,8 +55,8 @@ func DefaultOptions() *Options {
 		MaxProcessingTime:      250 * time.Millisecond,
 		OffsetPolicy:           sarama.OffsetOldest,
 		ConsumerMode:           cluster.ConsumerModePartitions,
-		FetchDefaultBytes:      10 * 1024 * 1024, // 10MB.
-		ProducerMaxMessageByes: 10 * 1024 * 1024, // 10MB
+		FetchDefaultBytes:      30 * 1024 * 1024, // 30MB.
+		ProducerMaxMessageByes: 30 * 1024 * 1024, // 30MB
 		OtherConsumerTopics:    make([]Topic, 0, 10),
 	}
 }
