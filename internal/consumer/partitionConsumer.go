@@ -335,7 +335,7 @@ func (p *partitionConsumer) markOffset() {
 		// Kafka contains offsets 100 - 200, HighWaterMark=201, (consumed) latestOff=150, 200-150 = 50 = 201-1-150 unconsumed messages
 		backlog := math.Max(float64(0), float64(p.pConsumer.HighWaterMarkOffset()-1-latestOff))
 		p.tally.Gauge(metrics.KafkaPartitionOffsetLag).Update(backlog)
-		//p.logger.Debug("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
+		p.logger.Info("partition consumer mark kafka checkpoint", zap.Int64("offset", latestOff))
 	}
 }
 
