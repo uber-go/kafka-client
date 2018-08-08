@@ -1,5 +1,11 @@
 # Changelog
 
+v0.2.2 (unreleased)
+-------------------
+
+- Nothing changed yet.
+
+
 v0.2.1 (2018-08-07)
 -------------------
 
