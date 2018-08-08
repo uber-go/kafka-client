@@ -1,6 +1,6 @@
 # Changelog
 
-v0.2.1 (unreleased)
+v0.2.1 (2018-08-07)
 -------------------
 
 - Add method to nack to DLQ.
