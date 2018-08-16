@@ -284,6 +284,18 @@ func (m *mockPartitionedConsumer) Partition() int32 {
 	return m.id
 }
 
+func (m *mockPartitionedConsumer) InitialOffset() int64 {
+	panic("implement me")
+}
+
+func (m *mockPartitionedConsumer) MarkOffset(offset int64, metadata string) {
+	panic("implement me")
+}
+
+func (m *mockPartitionedConsumer) ResetOffset(offset int64, metadata string) {
+	panic("implement me")
+}
+
 func newMockSaramaConsumer() *mockSaramaConsumer {
 	return &mockSaramaConsumer{
 		errorC:     make(chan error, 1),
@@ -394,6 +406,10 @@ func newMockSaramaClient() *mockSaramaClient {
 	return &mockSaramaClient{
 		closed: 0,
 	}
+}
+
+func (m *mockSaramaClient) Controller() (*sarama.Broker, error) {
+	panic("implement me")
 }
 
 func (m *mockSaramaClient) Config() *sarama.Config {
