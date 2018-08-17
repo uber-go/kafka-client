@@ -8,7 +8,7 @@ import:
 - package: github.com/Shopify/sarama
   version: ^1
 - package: github.com/bsm/sarama-cluster
-  version: ~2.1.13
+  version: abb0e9f5dd57b5a3167e1472136a84c4b989478b
 - package: github.com/golang/protobuf
   version: ^1
 testImport:
