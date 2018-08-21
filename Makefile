@@ -1,7 +1,7 @@
 export GO15VENDOREXPERIMENT=1
 
 BENCH_FLAGS ?= -cpuprofile=cpu.pprof -memprofile=mem.pprof -benchmem
-PKGS ?= $(shell glide novendor)
+PKGS ?= ./cmd/... ./internal/... ./kafka/... .
 # Many Go tools take file globs or directories as arguments instead of packages.
 PKG_FILES ?= *.go kafka internal/consumer internal/backoff internal/list internal/metrics internal/util
 
@@ -20,9 +20,9 @@ all: lint test
 
 .PHONY: dependencies
 dependencies:
-	@echo "Installing Glide and locked dependencies..."
-	glide --version || go get -u -f github.com/Masterminds/glide
-	glide install
+	@echo "Installing Dep and locked dependencies..."
+	command -v dep || curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+	dep ensure
 	@echo "Installing test dependencies..."
 	go get -u -f github.com/axw/gocov/gocov
 	go get -u -f github.com/mattn/goveralls
