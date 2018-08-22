@@ -404,6 +404,10 @@ func (m *mockSaramaClient) Brokers() []*sarama.Broker {
 	panic("implement me")
 }
 
+func (m *mockSaramaClient) Controller() (*sarama.Broker, error) {
+	panic("implement me")
+}
+
 func (m *mockSaramaClient) Topics() ([]string, error) {
 	panic("implement me")
 }
