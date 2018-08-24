@@ -33,6 +33,11 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"time"
+)
+
+const (
+	metricsInterval = time.Minute
 )
 
 type (
@@ -44,6 +49,7 @@ type (
 		scope            tally.Scope
 		logger           *zap.Logger
 		lifecycle        *util.RunLifecycle
+		metricsTicker    *time.Ticker
 		stopC            chan struct{}
 		doneC            chan struct{}
 	}
@@ -64,6 +70,7 @@ func NewClusterConsumer(
 		scope:            scope.Tagged(map[string]string{"cluster": cluster}),
 		logger:           logger.With(zap.String("cluster", cluster)),
 		lifecycle:        util.NewRunLifecycle(cluster + "-consumer"),
+		metricsTicker:    time.NewTicker(metricsInterval),
 		stopC:            make(chan struct{}),
 		doneC:            make(chan struct{}),
 	}
@@ -114,14 +121,31 @@ func (c *ClusterConsumer) Closed() <-chan struct{} {
 
 // eventLoop is the main event loop for this consumer
 func (c *ClusterConsumer) eventLoop() {
+	var n *cluster.Notification
+	var ok bool
 	for {
 		select {
-		case pc := <-c.consumer.Partitions():
+		case pc, ok := <-c.consumer.Partitions():
+			if !ok {
+				continue
+			}
 			c.addPartitionConsumer(pc)
-		case n := <-c.consumer.Notifications():
+		case n, ok = <-c.consumer.Notifications():
+			if !ok {
+				continue
+			}
 			c.handleNotification(n)
 		case err := <-c.consumer.Errors():
 			c.logger.Warn("cluster consumer error", zap.Error(err))
+		case _, ok := <- c.metricsTicker.C:
+			if !ok || n == nil {
+				continue
+			}
+			for topic, partitions := range n.Current {
+				for _, partition := range partitions {
+					c.scope.Tagged(map[string]string{"topic": topic, "partition": strconv.Itoa(int(partition))}).Gauge(metrics.KafkaPartitionOwned).Update(1.0)
+				}
+			}
 		case <-c.stopC:
 			c.shutdown()
 			c.logger.Info("cluster consumer stopped")
@@ -182,6 +206,7 @@ func (c *ClusterConsumer) shutdown() {
 	}
 	wg.Wait()
 	c.consumer.Close() // close sarama cluster consumer
+	c.metricsTicker.Stop()
 	close(c.doneC)
 }
 

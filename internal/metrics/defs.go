@@ -53,5 +53,6 @@ const (
 	KafkaPartitionOffsetFreshnessLag = "kafka.partition.freshness-lag"
 	KafkaPartitionReadOffset         = "kafka.partition.read-offset"
 	KafkaPartitionCommitOffset       = "kafka.partition.commit-offset"
+	KafkaPartitionOwnedCount         = "kafka.partition.owned.count"
 	KafkaPartitionOwned              = "kafka.partition.owned"
 )
