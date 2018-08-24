@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/metrics"
@@ -33,7 +34,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"time"
 )
 
 const (
@@ -137,7 +137,7 @@ func (c *ClusterConsumer) eventLoop() {
 			c.handleNotification(n)
 		case err := <-c.consumer.Errors():
 			c.logger.Warn("cluster consumer error", zap.Error(err))
-		case _, ok := <- c.metricsTicker.C:
+		case _, ok := <-c.metricsTicker.C:
 			if !ok || n == nil {
 				continue
 			}
