@@ -3,7 +3,7 @@
 v0.2.2 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Handle retryQ and DLQ only consumer topics.
 
 
 v0.2.1 (2018-08-07)
