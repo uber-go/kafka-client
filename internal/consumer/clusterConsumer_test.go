@@ -135,6 +135,7 @@ func (s *ClusterConsumerTestSuite) TestWithOnePartition() {
 	// send notification about a rebalance
 	n := &cluster.Notification{Claimed: make(map[string][]int32)}
 	n.Claimed[s.topic] = []int32{1}
+	n.Current[s.topic] = []int32{1}
 	s.saramaConsumer.notifyC <- n
 
 	s.True(util.AwaitWaitGroup(workerWG, time.Second)) // wait for messages to be consumed
