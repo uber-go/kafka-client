@@ -84,7 +84,17 @@ func (s *ClusterConsumerTestSuite) SetupTest() {
 	s.saramaConsumer = newMockSaramaConsumer()
 	s.dlqProducer = newMockDLQProducer()
 	s.topicConsumer = NewTopicConsumer(Topic{ConsumerTopic: topic, DLQMetadataDecoder: NoopDLQMetadataDecoder, PartitionConsumerFactory: NewPartitionConsumer}, s.msgCh, s.saramaConsumer, s.dlqProducer, s.options, tally.NoopScope, s.logger)
-	s.consumer = NewClusterConsumer(topic.Cluster, s.saramaConsumer, map[string]*TopicConsumer{s.topic: s.topicConsumer}, tally.NoopScope, s.logger)
+	s.consumer = &ClusterConsumer{
+		cluster:          topic.Cluster,
+		consumer:         s.saramaConsumer,
+		topicConsumerMap: map[string]*TopicConsumer{s.topic: s.topicConsumer},
+		scope:            tally.NoopScope,
+		logger:           s.logger,
+		lifecycle:        util.NewRunLifecycle(topic.Cluster + "-consumer"),
+		metricsTicker:    time.NewTicker(100 * time.Millisecond),
+		stopC:            make(chan struct{}),
+		doneC:            make(chan struct{}),
+	}
 }
 
 func (s *ClusterConsumerTestSuite) TearDownTest() {
@@ -123,8 +133,10 @@ func (s *ClusterConsumerTestSuite) TestWithOnePartition() {
 	p1.start()
 
 	// send notification about a rebalance
-	n := &cluster.Notification{Claimed: make(map[string][]int32)}
-	n.Claimed[s.topic] = []int32{1}
+	n := &cluster.Notification{
+		Claimed: map[string][]int32{s.topic: {1}},
+		Current: map[string][]int32{s.topic: {1}},
+	}
 	s.saramaConsumer.notifyC <- n
 
 	s.True(util.AwaitWaitGroup(workerWG, time.Second)) // wait for messages to be consumed

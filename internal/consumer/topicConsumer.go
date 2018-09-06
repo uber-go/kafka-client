@@ -101,7 +101,7 @@ func (c *TopicConsumer) addPartitionConsumer(pc cluster.PartitionConsumer) {
 	p := c.topic.PartitionConsumerFactory(c.topic, c.saramaConsumer, pc, c.options, c.msgC, c.dlq, c.scope, c.logger)
 	c.partitionConsumerMap[partition] = p
 	p.Start()
-	c.scope.Gauge(metrics.KafkaPartitionOwned).Update(float64(len(c.partitionConsumerMap)))
+	c.scope.Gauge(metrics.KafkaPartitionOwnedCount).Update(float64(len(c.partitionConsumerMap)))
 }
 
 func (c *TopicConsumer) shutdown() {
