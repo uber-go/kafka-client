@@ -126,24 +126,23 @@ func (c *ClusterConsumer) eventLoop() {
 	for {
 		select {
 		case pc, ok := <-c.consumer.Partitions():
-			if !ok {
-				continue
+			if ok {
+				c.addPartitionConsumer(pc)
 			}
-			c.addPartitionConsumer(pc)
 		case n, ok = <-c.consumer.Notifications():
-			if !ok {
-				continue
+			if ok {
+				c.handleNotification(n)
 			}
-			c.handleNotification(n)
-		case err := <-c.consumer.Errors():
-			c.logger.Warn("cluster consumer error", zap.Error(err))
+		case err, ok := <-c.consumer.Errors():
+			if ok {
+				c.logger.Warn("cluster consumer error", zap.Error(err))
+			}
 		case _, ok := <-c.metricsTicker.C:
-			if !ok || n == nil {
-				continue
-			}
-			for topic, partitions := range n.Current {
-				for _, partition := range partitions {
-					c.scope.Tagged(map[string]string{"topic": topic, "partition": strconv.Itoa(int(partition))}).Gauge(metrics.KafkaPartitionOwned).Update(1.0)
+			if ok && n != nil {
+				for topic, partitions := range n.Current {
+					for _, partition := range partitions {
+						c.scope.Tagged(map[string]string{"topic": topic, "partition": strconv.Itoa(int(partition))}).Gauge(metrics.KafkaPartitionOwned).Update(1.0)
+					}
 				}
 			}
 		case <-c.stopC:
