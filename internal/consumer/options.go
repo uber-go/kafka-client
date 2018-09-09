@@ -30,6 +30,7 @@ import (
 type (
 	// Options are the tunable and injectable options for the consumer
 	Options struct {
+		ClientID               string // client ID
 		RcvBufferSize          int // aggregate message buffer size
 		PartitionRcvBufferSize int // message buffer size for each partition
 		Concurrency            int // number of goroutines that will concurrently process messages

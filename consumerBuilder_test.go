@@ -102,6 +102,7 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 		s.resolver,
 		tally.NoopScope,
 		zap.NewNop(),
+		WithClientID("test-id"),
 	)
 	s.mockSaramaConsumerConstructor = &mockSaramaConsumerConstructor{
 		clusterTopicMap: make(map[string][]string),
