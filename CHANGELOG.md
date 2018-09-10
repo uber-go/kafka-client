@@ -5,6 +5,7 @@ v0.2.2 (unreleased)
 
 - Update KafkaPartitionOwned metric to be a boolean metric for ownership.
 - Rename number of partitions owned by specific worker to KafkaPartitionOwnedCount.
+- Add client id option.
 
 
 v0.2.1 (2018-08-07)

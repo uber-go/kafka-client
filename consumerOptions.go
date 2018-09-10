@@ -38,6 +38,10 @@ type (
 	retryTopicsOptions struct {
 		topicList kafka.ConsumerTopicList
 	}
+
+	clientIDOptions struct {
+		clientID string
+	}
 )
 
 // WithDLQTopics creates a range consumer for the specified consumer DLQ topics.
@@ -72,4 +76,15 @@ func (o *retryTopicsOptions) apply(opts *consumer.Options) {
 			PartitionConsumerFactory: consumer.NewPartitionConsumer,
 		})
 	}
+}
+
+// WithClientID sets client id.
+func WithClientID(clientID string) ConsumerOption {
+	return &clientIDOptions{
+		clientID: clientID,
+	}
+}
+
+func (o *clientIDOptions) apply(opts *consumer.Options) {
+	opts.ClientID = o.clientID
 }
