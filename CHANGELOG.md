@@ -3,6 +3,7 @@
 v0.2.2 (unreleased)
 -------------------
 
+- Handle retryQ and DLQ only consumer topics.
 - Update KafkaPartitionOwned metric to be a boolean metric for ownership.
 - Rename number of partitions owned by specific worker to KafkaPartitionOwnedCount.
 - Add client id option.

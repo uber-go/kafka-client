@@ -114,16 +114,20 @@ func (c *consumerBuilder) Build() (kafka.Consumer, error) {
 func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build TopicList per cluster
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
-		// first, add TopicConsumer for original topic.
+		// first, add TopicConsumer for original topic if topic is well defined.
 		// disabling offset commit only applies for the original topic.
-		partitionConsumerFactory := consumer.NewPartitionConsumer
-		if !c.kafkaConfig.Offsets.Commits.Enabled {
-			partitionConsumerFactory = consumer.NewPartitionConsumerWithoutCommit
+		if consumerTopic.Topic.Name != "" && consumerTopic.Topic.Cluster != "" {
+			partitionConsumerFactory := consumer.NewPartitionConsumer
+			if !c.kafkaConfig.Offsets.Commits.Enabled {
+				partitionConsumerFactory = consumer.NewPartitionConsumerWithoutCommit
+			}
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: partitionConsumerFactory}, c.kafkaConfig.Offsets.Initial.Offset)
 		}
-		c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: consumerTopic, DLQMetadataDecoder: consumer.NoopDLQMetadataDecoder, PartitionConsumerFactory: partitionConsumerFactory}, c.kafkaConfig.Offsets.Initial.Offset)
+		// Second, add retryQ topic if enabled.
 		if consumerTopic.RetryQ.Name != "" && consumerTopic.RetryQ.Cluster != "" {
 			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToRetryTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewPartitionConsumer}, sarama.OffsetOldest)
 		}
+		// Third, add DLQ topic if enabled.
 		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
 			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer}, sarama.OffsetOldest)
 		}
