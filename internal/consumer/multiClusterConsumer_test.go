@@ -65,8 +65,8 @@ func (s *MultiClusterConsumerTestSuite) SetupTest() {
 	s.consumer = NewMultiClusterConsumer(
 		s.config.GroupName,
 		s.topics,
-		make(map[string]*ClusterConsumer),
-		make(map[string]sarama.Client),
+		make(map[ClusterGroup]*ClusterConsumer),
+		make(map[ClusterGroup]sarama.Client),
 		s.msgCh,
 		tally.NoopScope,
 		zap.L(),
@@ -86,8 +86,8 @@ func TestMultiClusterConsumerSuite(t *testing.T) {
 func (s *MultiClusterConsumerTestSuite) TestStartSucceeds() {
 	cc1 := NewClusterConsumer("cc1", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.NewNop())
 	cc2 := NewClusterConsumer("cc2", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.NewNop())
-	s.consumer.clusterConsumerMap["cc1"] = cc1
-	s.consumer.clusterConsumerMap["cc2"] = cc2
+	s.consumer.clusterConsumerMap[ClusterGroup{"cc1", "g"}] = cc1
+	s.consumer.clusterConsumerMap[ClusterGroup{"cc2", "g"}] = cc2
 
 	s.NoError(s.consumer.Start())
 
@@ -109,8 +109,8 @@ func (s *MultiClusterConsumerTestSuite) TestStartSucceeds() {
 func (s *MultiClusterConsumerTestSuite) TestStartError() {
 	cc1 := NewClusterConsumer("cc1", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.L())
 	cc2 := NewClusterConsumer("cc2", newMockSaramaConsumer(), make(map[string]*TopicConsumer), tally.NoopScope, zap.L())
-	s.consumer.clusterConsumerMap["cc1"] = cc1
-	s.consumer.clusterConsumerMap["cc2"] = cc2
+	s.consumer.clusterConsumerMap[ClusterGroup{"cc1", "g"}] = cc1
+	s.consumer.clusterConsumerMap[ClusterGroup{"cc2", "g"}] = cc2
 
 	cc1.Start()
 	cc1.Stop()

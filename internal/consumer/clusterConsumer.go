@@ -53,6 +53,11 @@ type (
 		stopC            chan struct{}
 		doneC            chan struct{}
 	}
+
+	ClusterGroup struct {
+		Cluster string
+		Group string
+	}
 )
 
 // NewClusterConsumer returns a new single cluster consumer.

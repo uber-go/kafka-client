@@ -37,8 +37,8 @@ type (
 	MultiClusterConsumer struct {
 		groupName                string
 		topics                   kafka.ConsumerTopicList
-		clusterConsumerMap       map[string]*ClusterConsumer
-		clusterToSaramaClientMap map[string]sarama.Client
+		clusterConsumerMap       map[ClusterGroup]*ClusterConsumer
+		clusterToSaramaClientMap map[ClusterGroup]sarama.Client
 		msgC                     chan kafka.Message
 		doneC                    chan struct{}
 		scope                    tally.Scope
@@ -52,8 +52,8 @@ type (
 func NewMultiClusterConsumer(
 	groupName string,
 	topics kafka.ConsumerTopicList,
-	clusterConsumerMap map[string]*ClusterConsumer,
-	saramaClients map[string]sarama.Client,
+	clusterConsumerMap map[ClusterGroup]*ClusterConsumer,
+	saramaClients map[ClusterGroup]sarama.Client,
 	msgC chan kafka.Message,
 	scope tally.Scope,
 	logger *zap.Logger,
@@ -88,7 +88,7 @@ func (c *MultiClusterConsumer) Start() error {
 			if err = consumer.Start(); err != nil {
 				c.logger.With(
 					zap.Error(err),
-					zap.String("cluster", clusterName),
+					zap.String("cluster", clusterName.Cluster),
 				).Error("multicluster consumer start error")
 				return
 			}
@@ -130,8 +130,8 @@ func (c *MultiClusterConsumer) Messages() <-chan kafka.Message {
 }
 
 // ResetOffset will reset the consumer offset for the specified cluster, topic, partition.
-func (c *MultiClusterConsumer) ResetOffset(cluster, topic string, partition int32, offsetRange kafka.OffsetRange) error {
-	cc, ok := c.clusterConsumerMap[cluster]
+func (c *MultiClusterConsumer) ResetOffset(cluster, group, topic string, partition int32, offsetRange kafka.OffsetRange) error {
+	cc, ok := c.clusterConsumerMap[ClusterGroup{Cluster: cluster, Group: group}]
 	if !ok {
 		return errors.New("no cluster consumer found")
 	}
@@ -142,7 +142,7 @@ func (c *MultiClusterConsumer) ResetOffset(cluster, topic string, partition int3
 func (c *MultiClusterConsumer) MergeDLQ(topic kafka.ConsumerTopic, offsetRanges map[int32]kafka.OffsetRange) error {
 	errList := make([]string, 0, 10)
 	for partition, offsetRange := range offsetRanges {
-		if err := c.ResetOffset(topic.DLQ.Cluster, topic.DLQ.Name, partition, offsetRange); err != nil {
+		if err := c.ResetOffset(topic.DLQ.Cluster, DLQConsumerGroupName, topic.DLQ.Name, partition, offsetRange); err != nil {
 			errList = append(errList, fmt.Sprintf("partition=%d err=%s", partition, err))
 		}
 	}

@@ -119,11 +119,11 @@ func (s *ConsumerBuilderTestSuite) SetupTest() {
 }
 
 func (s *ConsumerBuilderTestSuite) TestBuild() {
-	consumer, err := s.builder.build()
+	kafkaConsumer, err := s.builder.build()
 	s.NoError(err)
-	s.NotNil(consumer)
+	s.NotNil(kafkaConsumer)
 	// 3 clusters used in consumer
-	s.Equal([]string{"cluster", "dlq-cluster"}, func() []string {
+	s.Equal([]string{"cluster", "dlq-cluster", "dlq-cluster"}, func() []string {
 		output := make([]string, 0, 3)
 		for cluster := range s.builder.clusterTopicsMap {
 			output = append(output, cluster.name)
@@ -131,20 +131,38 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		sort.Strings(output)
 		return output
 	}())
-	// 2 sarama clients corresponding DLQ producers for 2 clusters
+	// 3 consumer group names: 2 default for original and retryQ consumer and one dlq-merger
+	s.Equal([]string{"", "", "dlq-merger"}, func() []string {
+		output := make([]string, 0, 3)
+		for cluster := range s.builder.clusterTopicsMap {
+			output = append(output, cluster.groupName)
+		}
+		sort.Strings(output)
+		return output
+	}())
+	// 2 sarama clients corresponding DLQ producers for 2 clusters. Group name is unused.
 	s.Equal([]string{"dlq-cluster"}, func() []string {
 		output := make([]string, 0, 2)
 		for cluster := range s.builder.clusterSaramaClientMap {
-			output = append(output, cluster)
+			output = append(output, cluster.Cluster)
 		}
 		sort.Strings(output)
 		return output
 	}())
 	// consuming from 3 clusters
-	s.Equal([]string{"cluster", "dlq-cluster"}, func() []string {
+	s.Equal([]string{"cluster", "dlq-cluster", "dlq-cluster"}, func() []string {
 		output := make([]string, 0, 3)
 		for cluster := range s.builder.clusterSaramaConsumerMap {
-			output = append(output, cluster)
+			output = append(output, cluster.Cluster)
+		}
+		sort.Strings(output)
+		return output
+	}())
+	// consuming from 2 consumer group names
+	s.Equal([]string{"", "", "dlq-merger"}, func() []string {
+		output := make([]string, 0, 3)
+		for cluster := range s.builder.clusterSaramaConsumerMap {
+			output = append(output, cluster.Group)
 		}
 		sort.Strings(output)
 		return output

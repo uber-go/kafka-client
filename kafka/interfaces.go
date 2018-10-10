@@ -43,8 +43,6 @@ type (
 		Messages() <-chan Message
 		// MergeDLQ consumes the offset ranges for the partitions from the DLQ topic for the specified ConsumerTopic
 		MergeDLQ(ConsumerTopic, map[int32]OffsetRange) error
-		// ResetOffset resets the offsets the partition consumer for the specified cluster, topic, partition.
-		ResetOffset(cluster, topic string, partition int32, offsetRange OffsetRange) error
 	}
 
 	// OffsetRange is a range of offsets
