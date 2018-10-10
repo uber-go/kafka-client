@@ -131,7 +131,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		}
 		// Third, add DLQ topic if enabled.
 		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
-			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer, ConsumerGroup: "dlq-merger"}, sarama.OffsetOldest)
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer, ConsumerGroup: consumer.DLQConsumerGroupName}, sarama.OffsetOldest)
 		}
 	}
 
