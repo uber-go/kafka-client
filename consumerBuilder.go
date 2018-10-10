@@ -270,7 +270,7 @@ func (c *consumerBuilder) close() {
 }
 
 func (c *consumerBuilder) getOrAddSaramaConsumer(cluster consumerCluster, topicList []consumer.Topic) (consumer.SaramaConsumer, error) {
-	brokerList, err := c.resolver.ResolveIPForCluster(cluster.groupName)
+	brokerList, err := c.resolver.ResolveIPForCluster(cluster.name)
 	if err != nil {
 		return nil, err
 	}
