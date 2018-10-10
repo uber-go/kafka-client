@@ -36,7 +36,7 @@ type (
 		clusterTopicsMap map[consumerCluster][]consumer.Topic
 
 		clusterSaramaClientMap        map[string]sarama.Client
-		clusterSaramaConsumerMap      map[string]consumer.SaramaConsumer
+		clusterSaramaConsumerMap      map[consumerCluster]consumer.SaramaConsumer
 		clusterTopicSaramaProducerMap map[string]map[string]sarama.AsyncProducer
 
 		msgCh  chan kafka.Message
@@ -58,6 +58,8 @@ type (
 		name string
 		// initialOffset is the initial offset of the cluster if there is no previously checkpointed offset.
 		initialOffset int64
+		// group name to use when consuming from this cluster
+		groupName string
 	}
 )
 
@@ -91,12 +93,12 @@ func newConsumerBuilder(
 }
 
 func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic, offsetPolicy int64) {
-	topicList, ok := c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}]
+	topicList, ok := c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy, topic.ConsumerGroup}]
 	if !ok {
 		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
-	c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}] = topicList
+	c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy, topic.ConsumerGroup}] = topicList
 }
 
 func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []consumer.Topic) []string {
@@ -129,7 +131,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		}
 		// Third, add DLQ topic if enabled.
 		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
-			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer}, sarama.OffsetOldest)
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer, ConsumerGroup: "dlq-merger"}, sarama.OffsetOldest)
 		}
 	}
 
@@ -142,7 +144,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
 		uniqueTopicList := c.uniqueTopics(topicList)
-		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster.name, uniqueTopicList, cluster.initialOffset)
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, uniqueTopicList)
 		if err != nil {
 			c.close()
 			return nil, err
@@ -263,18 +265,23 @@ func (c *consumerBuilder) close() {
 	}
 }
 
-func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []consumer.Topic, offsetPolicy int64) (consumer.SaramaConsumer, error) {
-	brokerList, err := c.resolver.ResolveIPForCluster(cluster)
+func (c *consumerBuilder) getOrAddSaramaConsumer(cluster consumerCluster, topicList []consumer.Topic) (consumer.SaramaConsumer, error) {
+	brokerList, err := c.resolver.ResolveIPForCluster(cluster.groupName)
 	if err != nil {
 		return nil, err
 	}
 
 	saramaConfig := *c.saramaClusterConfig
-	saramaConfig.Consumer.Offsets.Initial = offsetPolicy
+	saramaConfig.Consumer.Offsets.Initial = cluster.initialOffset
+
+	groupName := c.kafkaConfig.GroupName
+	if cluster.groupName != "" {
+		groupName = cluster.groupName
+	}
 
 	saramaConsumer, err := c.constructors.NewSaramaConsumer(
 		brokerList,
-		c.kafkaConfig.GroupName,
+		groupName,
 		c.topicConsumerBuilderToTopicNames(topicList),
 		&saramaConfig,
 	)
