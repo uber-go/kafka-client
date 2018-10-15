@@ -132,7 +132,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		return output
 	}())
 	// 3 consumer group names: 2 default for original and retryQ consumer and one dlq-merger
-	s.Equal([]string{"", "", "dlq-merger"}, func() []string {
+	s.Equal([]string{"consumergroup", "consumergroup", "consumergroup-dlq-merger"}, func() []string {
 		output := make([]string, 0, 3)
 		for cluster := range s.builder.clusterTopicsMap {
 			output = append(output, cluster.groupName)
@@ -159,7 +159,7 @@ func (s *ConsumerBuilderTestSuite) TestBuild() {
 		return output
 	}())
 	// consuming from 2 consumer group names
-	s.Equal([]string{"", "", "dlq-merger"}, func() []string {
+	s.Equal([]string{"consumergroup", "consumergroup", "consumergroup-dlq-merger"}, func() []string {
 		output := make([]string, 0, 3)
 		for cluster := range s.builder.clusterSaramaConsumerMap {
 			output = append(output, cluster.Group)
