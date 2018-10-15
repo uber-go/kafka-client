@@ -41,6 +41,9 @@ var (
 	RetryQErrorQType ErrorQType = "retryQ"
 	// DLQErrorQType is the error queue for DLQ.
 	DLQErrorQType ErrorQType = "DLQ"
+
+	// DLQConsumerGroupNameSuffix is the consumer group name used by the DLQ merge process.
+	DLQConsumerGroupNameSuffix = "-dlq-merger"
 )
 
 type (

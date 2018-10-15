@@ -35,8 +35,8 @@ type (
 	consumerBuilder struct {
 		clusterTopicsMap map[consumerCluster][]consumer.Topic
 
-		clusterSaramaClientMap        map[string]sarama.Client
-		clusterSaramaConsumerMap      map[string]consumer.SaramaConsumer
+		clusterSaramaClientMap        map[consumer.ClusterGroup]sarama.Client
+		clusterSaramaConsumerMap      map[consumer.ClusterGroup]consumer.SaramaConsumer
 		clusterTopicSaramaProducerMap map[string]map[string]sarama.AsyncProducer
 
 		msgCh  chan kafka.Message
@@ -58,6 +58,8 @@ type (
 		name string
 		// initialOffset is the initial offset of the cluster if there is no previously checkpointed offset.
 		initialOffset int64
+		// group name to use when consuming from this cluster
+		groupName string
 	}
 )
 
@@ -71,8 +73,8 @@ func newConsumerBuilder(
 	saramaClusterConfig := buildSaramaConfig(consumerOptions)
 	return &consumerBuilder{
 		clusterTopicsMap:              make(map[consumerCluster][]consumer.Topic),
-		clusterSaramaClientMap:        make(map[string]sarama.Client),
-		clusterSaramaConsumerMap:      make(map[string]consumer.SaramaConsumer),
+		clusterSaramaClientMap:        make(map[consumer.ClusterGroup]sarama.Client),
+		clusterSaramaConsumerMap:      make(map[consumer.ClusterGroup]consumer.SaramaConsumer),
 		clusterTopicSaramaProducerMap: make(map[string]map[string]sarama.AsyncProducer),
 		msgCh:  make(chan kafka.Message, consumerOptions.RcvBufferSize),
 		logger: logger.With(zap.String("consumergroup", config.GroupName)),
@@ -91,12 +93,21 @@ func newConsumerBuilder(
 }
 
 func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic, offsetPolicy int64) {
-	topicList, ok := c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}]
+	groupName := c.kafkaConfig.GroupName + topic.ConsumerGroupSuffix
+	topicList, ok := c.clusterTopicsMap[consumerCluster{
+		name: topic.Topic.Cluster,
+		initialOffset: offsetPolicy,
+		groupName: groupName,
+	}]
 	if !ok {
 		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
-	c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy}] = topicList
+	c.clusterTopicsMap[consumerCluster{
+		name: topic.Topic.Cluster,
+		initialOffset: offsetPolicy,
+		groupName: groupName,
+	}] = topicList
 }
 
 func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []consumer.Topic) []string {
@@ -129,7 +140,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		}
 		// Third, add DLQ topic if enabled.
 		if consumerTopic.DLQ.Name != "" && consumerTopic.DLQ.Cluster != "" {
-			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer}, sarama.OffsetOldest)
+			c.addTopicToClusterTopicsMap(consumer.Topic{ConsumerTopic: topicToDLQTopic(consumerTopic), DLQMetadataDecoder: consumer.ProtobufDLQMetadataDecoder, PartitionConsumerFactory: consumer.NewRangePartitionConsumer, ConsumerGroupSuffix: consumer.DLQConsumerGroupNameSuffix}, sarama.OffsetOldest)
 		}
 	}
 
@@ -139,10 +150,10 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	}
 
 	// build cluster consumer
-	clusterConsumerMap := make(map[string]*consumer.ClusterConsumer)
+	clusterConsumerMap := make(map[consumer.ClusterGroup]*consumer.ClusterConsumer)
 	for cluster, topicList := range c.clusterTopicsMap {
 		uniqueTopicList := c.uniqueTopics(topicList)
-		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster.name, uniqueTopicList, cluster.initialOffset)
+		saramaConsumer, err := c.getOrAddSaramaConsumer(cluster, uniqueTopicList)
 		if err != nil {
 			c.close()
 			return nil, err
@@ -175,7 +186,10 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 			)
 			topicConsumerMap[topic.Name] = topicConsumer
 		}
-		clusterConsumerMap[cluster.name] = consumer.NewClusterConsumer(
+		clusterConsumerMap[consumer.ClusterGroup{
+			Cluster: cluster.name,
+			Group: cluster.groupName,
+		}] = consumer.NewClusterConsumer(
 			cluster.name,
 			saramaConsumer,
 			topicConsumerMap,
@@ -231,9 +245,10 @@ func (c *consumerBuilder) getOrAddSaramaProducer(topic kafka.Topic) (sarama.Asyn
 	return sp, nil
 }
 
+// getOrAddSaramaClient is only used in producer.
 func (c *consumerBuilder) getOrAddSaramaClient(topic kafka.Topic) (sarama.Client, error) {
 	var err error
-	sc, ok := c.clusterSaramaClientMap[topic.Cluster]
+	sc, ok := c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group:""}]
 	if !ok {
 		var brokerList []string
 		brokerList, err = c.resolver.ResolveIPForCluster(topic.Cluster)
@@ -245,7 +260,7 @@ func (c *consumerBuilder) getOrAddSaramaClient(topic kafka.Topic) (sarama.Client
 			return nil, err
 		}
 	}
-	c.clusterSaramaClientMap[topic.Cluster] = sc
+	c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group:""}] = sc
 	return sc, nil
 }
 
@@ -263,18 +278,18 @@ func (c *consumerBuilder) close() {
 	}
 }
 
-func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []consumer.Topic, offsetPolicy int64) (consumer.SaramaConsumer, error) {
-	brokerList, err := c.resolver.ResolveIPForCluster(cluster)
+func (c *consumerBuilder) getOrAddSaramaConsumer(cluster consumerCluster, topicList []consumer.Topic) (consumer.SaramaConsumer, error) {
+	brokerList, err := c.resolver.ResolveIPForCluster(cluster.name)
 	if err != nil {
 		return nil, err
 	}
 
 	saramaConfig := *c.saramaClusterConfig
-	saramaConfig.Consumer.Offsets.Initial = offsetPolicy
+	saramaConfig.Consumer.Offsets.Initial = cluster.initialOffset
 
 	saramaConsumer, err := c.constructors.NewSaramaConsumer(
 		brokerList,
-		c.kafkaConfig.GroupName,
+		cluster.groupName,
 		c.topicConsumerBuilderToTopicNames(topicList),
 		&saramaConfig,
 	)
@@ -282,7 +297,7 @@ func (c *consumerBuilder) getOrAddSaramaConsumer(cluster string, topicList []con
 		return nil, err
 	}
 
-	c.clusterSaramaConsumerMap[cluster] = saramaConsumer
+	c.clusterSaramaConsumerMap[consumer.ClusterGroup{Cluster: cluster.name, Group: cluster.groupName}] = saramaConsumer
 	return saramaConsumer, nil
 }
 
