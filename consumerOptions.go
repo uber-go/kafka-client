@@ -57,7 +57,7 @@ func (o *dlqTopicsOptions) apply(opts *consumer.Options) {
 			ConsumerTopic:            topic,
 			DLQMetadataDecoder:       consumer.ProtobufDLQMetadataDecoder,
 			PartitionConsumerFactory: consumer.NewRangePartitionConsumer,
-			ConsumerGroupSuffix:            consumer.DLQConsumerGroupNameSuffix,
+			ConsumerGroupSuffix:      consumer.DLQConsumerGroupNameSuffix,
 		})
 	}
 }

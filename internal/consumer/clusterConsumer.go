@@ -56,7 +56,7 @@ type (
 
 	ClusterGroup struct {
 		Cluster string
-		Group string
+		Group   string
 	}
 )
 

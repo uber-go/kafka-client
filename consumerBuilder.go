@@ -95,18 +95,18 @@ func newConsumerBuilder(
 func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic, offsetPolicy int64) {
 	groupName := c.kafkaConfig.GroupName + topic.ConsumerGroupSuffix
 	topicList, ok := c.clusterTopicsMap[consumerCluster{
-		name: topic.Topic.Cluster,
+		name:          topic.Topic.Cluster,
 		initialOffset: offsetPolicy,
-		groupName: groupName,
+		groupName:     groupName,
 	}]
 	if !ok {
 		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
 	c.clusterTopicsMap[consumerCluster{
-		name: topic.Topic.Cluster,
+		name:          topic.Topic.Cluster,
 		initialOffset: offsetPolicy,
-		groupName: groupName,
+		groupName:     groupName,
 	}] = topicList
 }
 
@@ -188,7 +188,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		}
 		clusterConsumerMap[consumer.ClusterGroup{
 			Cluster: cluster.name,
-			Group: cluster.groupName,
+			Group:   cluster.groupName,
 		}] = consumer.NewClusterConsumer(
 			cluster.name,
 			saramaConsumer,
@@ -248,7 +248,7 @@ func (c *consumerBuilder) getOrAddSaramaProducer(topic kafka.Topic) (sarama.Asyn
 // getOrAddSaramaClient is only used in producer.
 func (c *consumerBuilder) getOrAddSaramaClient(topic kafka.Topic) (sarama.Client, error) {
 	var err error
-	sc, ok := c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group:""}]
+	sc, ok := c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group: ""}]
 	if !ok {
 		var brokerList []string
 		brokerList, err = c.resolver.ResolveIPForCluster(topic.Cluster)
@@ -260,7 +260,7 @@ func (c *consumerBuilder) getOrAddSaramaClient(topic kafka.Topic) (sarama.Client
 			return nil, err
 		}
 	}
-	c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group:""}] = sc
+	c.clusterSaramaClientMap[consumer.ClusterGroup{Cluster: topic.Cluster, Group: ""}] = sc
 	return sc, nil
 }
 

@@ -22,14 +22,12 @@ package consumer
 
 import (
 	"errors"
-	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/uber-go/kafka-client/internal/metrics"
 	"github.com/uber-go/kafka-client/internal/util"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"strings"
 )
 
 type (
@@ -139,16 +137,7 @@ func (c *MultiClusterConsumer) ResetOffset(cluster, group, topic string, partiti
 }
 
 // MergeDLQ will merge the offset range for each partition of the DLQ topic for the specified ConsumerTopic.
-func (c *MultiClusterConsumer) MergeDLQ(topic kafka.ConsumerTopic, offsetRanges map[int32]kafka.OffsetRange) error {
-	errList := make([]string, 0, 10)
-	for partition, offsetRange := range offsetRanges {
-		if err := c.ResetOffset(topic.DLQ.Cluster, c.groupName + DLQConsumerGroupNameSuffix, topic.DLQ.Name, partition, offsetRange); err != nil {
-			errList = append(errList, fmt.Sprintf("partition=%d err=%s", partition, err))
-		}
-	}
-
-	if len(errList) == 0 {
-		return nil
-	}
-	return fmt.Errorf("DLQ merge failed for %s", strings.Join(errList, ","))
+// Topic should be the DLQ topic (with __dlq).
+func (c *MultiClusterConsumer) MergeDLQ(cluster, group, topic string, partition int32, offsetRange kafka.OffsetRange) error {
+	return c.ResetOffset(cluster, group+DLQConsumerGroupNameSuffix, topic, partition, offsetRange)
 }

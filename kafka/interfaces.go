@@ -42,7 +42,8 @@ type (
 		// Messages return the message channel for this consumer
 		Messages() <-chan Message
 		// MergeDLQ consumes the offset ranges for the partitions from the DLQ topic for the specified ConsumerTopic
-		MergeDLQ(ConsumerTopic, map[int32]OffsetRange) error
+		// Topic should be the __dlq topic name.
+		MergeDLQ(cluster, group, topic string, partition int32, offsetRange OffsetRange) error
 	}
 
 	// OffsetRange is a range of offsets
