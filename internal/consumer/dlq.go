@@ -42,8 +42,8 @@ var (
 	// DLQErrorQType is the error queue for DLQ.
 	DLQErrorQType ErrorQType = "DLQ"
 
-	// DLQConsumerGroupName is the consumer group name used by the DLQ merge process.
-	DLQConsumerGroupName = "dlq-merger"
+	// DLQConsumerGroupNameSuffix is the consumer group name used by the DLQ merge process.
+	DLQConsumerGroupNameSuffix = "-dlq-merger"
 )
 
 type (

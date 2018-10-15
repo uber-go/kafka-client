@@ -79,7 +79,7 @@ type (
 		kafka.ConsumerTopic
 		DLQMetadataDecoder
 		PartitionConsumerFactory
-		ConsumerGroup string
+		ConsumerGroupSuffix string
 	}
 
 	// DLQMetadataDecoder decodes a byte array into DLQMetadata.

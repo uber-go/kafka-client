@@ -142,7 +142,7 @@ func (c *MultiClusterConsumer) ResetOffset(cluster, group, topic string, partiti
 func (c *MultiClusterConsumer) MergeDLQ(topic kafka.ConsumerTopic, offsetRanges map[int32]kafka.OffsetRange) error {
 	errList := make([]string, 0, 10)
 	for partition, offsetRange := range offsetRanges {
-		if err := c.ResetOffset(topic.DLQ.Cluster, DLQConsumerGroupName, topic.DLQ.Name, partition, offsetRange); err != nil {
+		if err := c.ResetOffset(topic.DLQ.Cluster, c.groupName + DLQConsumerGroupNameSuffix, topic.DLQ.Name, partition, offsetRange); err != nil {
 			errList = append(errList, fmt.Sprintf("partition=%d err=%s", partition, err))
 		}
 	}
