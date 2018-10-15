@@ -94,12 +94,20 @@ func newConsumerBuilder(
 
 func (c *consumerBuilder) addTopicToClusterTopicsMap(topic consumer.Topic, offsetPolicy int64) {
 	groupName := c.kafkaConfig.GroupName + topic.ConsumerGroupSuffix
-	topicList, ok := c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy, groupName}]
+	topicList, ok := c.clusterTopicsMap[consumerCluster{
+		name: topic.Topic.Cluster,
+		initialOffset: offsetPolicy,
+		groupName: groupName,
+	}]
 	if !ok {
 		topicList = make([]consumer.Topic, 0, 10)
 	}
 	topicList = append(topicList, topic)
-	c.clusterTopicsMap[consumerCluster{topic.Topic.Cluster, offsetPolicy, groupName}] = topicList
+	c.clusterTopicsMap[consumerCluster{
+		name: topic.Topic.Cluster,
+		initialOffset: offsetPolicy,
+		groupName: groupName,
+	}] = topicList
 }
 
 func (c *consumerBuilder) topicConsumerBuilderToTopicNames(topicList []consumer.Topic) []string {
@@ -279,14 +287,9 @@ func (c *consumerBuilder) getOrAddSaramaConsumer(cluster consumerCluster, topicL
 	saramaConfig := *c.saramaClusterConfig
 	saramaConfig.Consumer.Offsets.Initial = cluster.initialOffset
 
-	groupName := c.kafkaConfig.GroupName
-	if cluster.groupName != "" {
-		groupName += cluster.groupName
-	}
-
 	saramaConsumer, err := c.constructors.NewSaramaConsumer(
 		brokerList,
-		groupName,
+		cluster.groupName,
 		c.topicConsumerBuilderToTopicNames(topicList),
 		&saramaConfig,
 	)
