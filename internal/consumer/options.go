@@ -21,6 +21,7 @@
 package consumer
 
 import (
+	"crypto/tls"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -42,6 +43,7 @@ type (
 		ProducerMaxMessageByes int
 		FetchDefaultBytes      int32
 		OtherConsumerTopics    []Topic
+		TLSConfig              *tls.Config // TLSConfig is the configuration to use for secure connections, not nil -> enable, nil -> disabled
 	}
 )
 
