@@ -21,6 +21,7 @@
 package kafka
 
 import (
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -94,6 +95,11 @@ type (
 		// When using the handler based API, this corresponds to the number of concurrent go
 		// routines handler functions the library will run. Default is 1.
 		Concurrency int
+
+
+		// TLSConfig is the configuration to use for secure connections if
+		// enabled (not nil) (defaults to disabled, nil).
+		TLSConfig *tls.Config
 	}
 )
 
