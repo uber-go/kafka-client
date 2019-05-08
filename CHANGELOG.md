@@ -1,6 +1,6 @@
 # Changelog
 
-v0.2.2 (unreleased)
+v0.2.2 (2019-05-08)
 -------------------
 
 - Handle retryQ and DLQ only consumer topics.
