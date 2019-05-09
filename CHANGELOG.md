@@ -1,5 +1,11 @@
 # Changelog
 
+v0.2.3 (unreleased)
+-------------------
+
+- Nothing changed yet.
+
+
 v0.2.2 (2019-05-08)
 -------------------
 
