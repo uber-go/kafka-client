@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
+	cluster "github.com/bsm/sarama-cluster"
 )
 
 type (
@@ -44,6 +44,9 @@ type (
 		FetchDefaultBytes      int32
 		OtherConsumerTopics    []Topic
 		TLSConfig              *tls.Config // TLSConfig is the configuration to use for secure connections, not nil -> enable, nil -> disabled
+		SASLUsername           string
+		SASLPassword           string
+		SASLEnabled            bool
 	}
 )
 
