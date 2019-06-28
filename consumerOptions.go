@@ -21,8 +21,8 @@
 package kafkaclient
 
 import (
-	"github.com/uber-go/kafka-client/internal/consumer"
-	"github.com/uber-go/kafka-client/kafka"
+	"github.com/gig/kafka-client/internal/consumer"
+	"github.com/gig/kafka-client/kafka"
 )
 
 type (

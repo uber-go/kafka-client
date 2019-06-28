@@ -12,11 +12,11 @@ A high level Go client library for Apache Kafka that provides the following prim
 This library is in alpha. APIs are subject to change, use at your own risk
 
 ## Contributing
-If you are interested in contributing, please sign the [License Agreement](https://cla-assistant.io/uber-go/kafka-client) and see our [development guide](https://github.com/uber-go/kafka-client/blob/master/docs/DEVELOPMENT-GUIDE.md)
+If you are interested in contributing, please sign the [License Agreement](https://cla-assistant.io/uber-go/kafka-client) and see our [development guide](https://github.com/gig/kafka-client/blob/master/docs/DEVELOPMENT-GUIDE.md)
 
 ## Installation
 
-`go get -u github.com/uber-go/kafka-client`
+`go get -u github.com/gig/kafka-client`
 
 ## Quick Start
 
@@ -27,8 +27,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/uber-go/kafka-client"
-	"github.com/uber-go/kafka-client/kafka"
+	"github.com/gig/kafka-client"
+	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -100,7 +100,7 @@ func main() {
 ```
 
 [mit-img]: http://img.shields.io/badge/License-MIT-blue.svg
-[mit]: https://github.com/uber-go/kafka-client/blob/master/LICENSE
+[mit]: https://github.com/gig/kafka-client/blob/master/LICENSE
 
 [ci-img]: https://img.shields.io/travis/uber-go/kafka-client/master.svg
 [ci]: https://travis-ci.org/uber-go/kafka-client/branches
