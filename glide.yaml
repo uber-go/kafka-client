@@ -1,4 +1,4 @@
-package: github.com/uber-go/kafka-client
+package: github.com/gig/kafka-client
 license: MIT
 import:
 - package: go.uber.org/zap
