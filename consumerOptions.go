@@ -42,7 +42,25 @@ type (
 	clientIDOptions struct {
 		clientID string
 	}
+
+	SASLOptions struct {
+		username string
+		password string
+	}
 )
+
+func WithSASLAuth(username, password string) ConsumerOption {
+	return &SASLOptions{
+		username: username,
+		password: password,
+	}
+}
+
+func (o *SASLOptions) apply(opts *consumer.Options) {
+	opts.SASLEnabled = true
+	opts.SASLUsername = o.username
+	opts.SASLPassword = o.password
+}
 
 // WithDLQTopics creates a range consumer for the specified consumer DLQ topics.
 func WithDLQTopics(topicList kafka.ConsumerTopicList) ConsumerOption {

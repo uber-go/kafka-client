@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -76,9 +76,9 @@ func newConsumerBuilder(
 		clusterSaramaClientMap:        make(map[consumer.ClusterGroup]sarama.Client),
 		clusterSaramaConsumerMap:      make(map[consumer.ClusterGroup]consumer.SaramaConsumer),
 		clusterTopicSaramaProducerMap: make(map[string]map[string]sarama.AsyncProducer),
-		msgCh:  make(chan kafka.Message, consumerOptions.RcvBufferSize),
-		logger: logger.With(zap.String("consumergroup", config.GroupName)),
-		scope:  scope.Tagged(map[string]string{"consumergroup": config.GroupName}),
+		msgCh:                         make(chan kafka.Message, consumerOptions.RcvBufferSize),
+		logger:                        logger.With(zap.String("consumergroup", config.GroupName)),
+		scope:                         scope.Tagged(map[string]string{"consumergroup": config.GroupName}),
 		constructors: consumer.Constructors{
 			NewSaramaConsumer: consumer.NewSaramaConsumer,
 			NewSaramaProducer: consumer.NewSaramaProducer,
@@ -358,6 +358,14 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.Consumer.Offsets.CommitInterval = options.OffsetCommitInterval
 	config.Consumer.Offsets.Initial = options.OffsetPolicy
 	config.Consumer.MaxProcessingTime = options.MaxProcessingTime
+
+	if options.SASLEnabled {
+		config.Config.Net.SASL.Enable = true
+		config.Config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+		config.Config.Net.SASL.User = options.SASLUsername
+		config.Config.Net.SASL.Password = options.SASLPassword
+
+	}
 	return config
 }
 
