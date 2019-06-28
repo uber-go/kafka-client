@@ -26,7 +26,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-go/kafka-client/kafka"
+	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
