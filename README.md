@@ -66,6 +66,9 @@ func main() {
 		Concurrency: 100, // number of go routines processing messages in parallel
 	}
 
+	// receive all messages on the topic
+	config.Offsets.Initial.Offset = kafka.OffsetOldest
+
 	// Create the consumer through the previously created client
 	consumer, err := client.NewConsumer(config)
 	if err != nil {
