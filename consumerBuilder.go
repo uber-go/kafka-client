@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/uber-go/kafka-client/internal/consumer"
 	"github.com/uber-go/kafka-client/kafka"
 	"github.com/uber-go/tally"
@@ -76,9 +76,9 @@ func newConsumerBuilder(
 		clusterSaramaClientMap:        make(map[consumer.ClusterGroup]sarama.Client),
 		clusterSaramaConsumerMap:      make(map[consumer.ClusterGroup]consumer.SaramaConsumer),
 		clusterTopicSaramaProducerMap: make(map[string]map[string]sarama.AsyncProducer),
-		msgCh:  make(chan kafka.Message, consumerOptions.RcvBufferSize),
-		logger: logger.With(zap.String("consumergroup", config.GroupName)),
-		scope:  scope.Tagged(map[string]string{"consumergroup": config.GroupName}),
+		msgCh:                         make(chan kafka.Message, consumerOptions.RcvBufferSize),
+		logger:                        logger.With(zap.String("consumergroup", config.GroupName)),
+		scope:                         scope.Tagged(map[string]string{"consumergroup": config.GroupName}),
 		constructors: consumer.Constructors{
 			NewSaramaConsumer: consumer.NewSaramaConsumer,
 			NewSaramaProducer: consumer.NewSaramaProducer,
@@ -329,6 +329,9 @@ func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) 
 	for _, cOpt := range consumerOpts {
 		cOpt.apply(opts)
 	}
+
+	// Copy the TLS config
+	opts.TLSConfig = config.TLSConfig
 
 	return opts
 }
