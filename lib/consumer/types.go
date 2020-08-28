@@ -26,7 +26,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
 	"github.com/golang/protobuf/proto"
-	"github.com/gig/kafka-client/internal/util"
+	"github.com/gig/kafka-client/lib/util"
 	"github.com/gig/kafka-client/kafka"
 	"go.uber.org/zap/zapcore"
 )

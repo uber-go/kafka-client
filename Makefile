@@ -1,9 +1,9 @@
 export GO15VENDOREXPERIMENT=1
 
 BENCH_FLAGS ?= -cpuprofile=cpu.pprof -memprofile=mem.pprof -benchmem
-PKGS ?= ./cmd/... ./internal/... ./kafka/... .
+PKGS ?= ./cmd/... ./lib/... ./kafka/... .
 # Many Go tools take file globs or directories as arguments instead of packages.
-PKG_FILES ?= *.go kafka internal/consumer internal/backoff internal/list internal/metrics internal/util
+PKG_FILES ?= *.go kafka lib/consumer lib/backoff lib/list lib/metrics lib/util
 
 # The linting tools evolve with each Go version, so run them only on the latest
 # stable release.

@@ -21,7 +21,7 @@
 package kafkaclient
 
 import (
-	"github.com/gig/kafka-client/internal/consumer"
+	"github.com/gig/kafka-client/lib/consumer"
 	"github.com/gig/kafka-client/kafka"
 )
 

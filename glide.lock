@@ -43,9 +43,9 @@ imports:
   version: 35aad584952c3e7020db7b839f6b102de6271f89
   subpackages:
   - buffer
-  - internal/bufferpool
-  - internal/color
-  - internal/exit
+  - lib/bufferpool
+  - lib/color
+  - lib/exit
   - zapcore
 testImports:
 - name: github.com/pmezard/go-difflib

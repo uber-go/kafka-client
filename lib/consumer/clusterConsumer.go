@@ -28,8 +28,8 @@ import (
 	"time"
 
 	cluster "github.com/bsm/sarama-cluster"
-	"github.com/gig/kafka-client/internal/metrics"
-	"github.com/gig/kafka-client/internal/util"
+	"github.com/gig/kafka-client/lib/metrics"
+	"github.com/gig/kafka-client/lib/util"
 	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"

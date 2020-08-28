@@ -26,8 +26,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	"github.com/gig/kafka-client/internal/metrics"
-	"github.com/gig/kafka-client/internal/util"
+	"github.com/gig/kafka-client/lib/metrics"
+	"github.com/gig/kafka-client/lib/util"
 	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"

@@ -27,7 +27,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
-	"github.com/gig/kafka-client/internal/consumer"
+	"github.com/gig/kafka-client/lib/consumer"
 	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
 	"github.com/xdg/scram"

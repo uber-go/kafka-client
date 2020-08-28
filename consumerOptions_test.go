@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/gig/kafka-client/internal/consumer"
+	"github.com/gig/kafka-client/lib/consumer"
 	"github.com/gig/kafka-client/kafka"
 )
 

@@ -142,9 +142,9 @@
   packages = [
     ".",
     "buffer",
-    "internal/bufferpool",
-    "internal/color",
-    "internal/exit",
+    "lib/bufferpool",
+    "lib/color",
+    "lib/exit",
     "zapcore",
   ]
   pruneopts = "UT"
