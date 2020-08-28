@@ -96,10 +96,11 @@ type (
 		// routines handler functions the library will run. Default is 1.
 		Concurrency int
 
-
 		// TLSConfig is the configuration to use for secure connections if
 		// enabled (not nil) (defaults to disabled, nil).
 		TLSConfig *tls.Config
+
+		SASLEnabled bool
 	}
 )
 

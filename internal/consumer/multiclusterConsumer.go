@@ -22,6 +22,7 @@ package consumer
 
 import (
 	"errors"
+
 	"github.com/Shopify/sarama"
 	"github.com/gig/kafka-client/internal/metrics"
 	"github.com/gig/kafka-client/internal/util"
@@ -39,6 +40,7 @@ type (
 		clusterToSaramaClientMap map[ClusterGroup]sarama.Client
 		msgC                     chan kafka.Message
 		doneC                    chan struct{}
+		errorsC                  chan error
 		scope                    tally.Scope
 		logger                   *zap.Logger
 		lifecycle                *util.RunLifecycle
@@ -52,6 +54,7 @@ func NewMultiClusterConsumer(
 	topics kafka.ConsumerTopicList,
 	clusterConsumerMap map[ClusterGroup]*ClusterConsumer,
 	saramaClients map[ClusterGroup]sarama.Client,
+	errorsC chan error,
 	msgC chan kafka.Message,
 	scope tally.Scope,
 	logger *zap.Logger,
@@ -61,11 +64,12 @@ func NewMultiClusterConsumer(
 		topics:                   topics,
 		clusterConsumerMap:       clusterConsumerMap,
 		clusterToSaramaClientMap: saramaClients,
-		msgC:      msgC,
-		doneC:     make(chan struct{}),
-		scope:     scope,
-		logger:    logger,
-		lifecycle: util.NewRunLifecycle(groupName + "-consumer"),
+		msgC:                     msgC,
+		errorsC:                  errorsC,
+		doneC:                    make(chan struct{}),
+		scope:                    scope,
+		logger:                   logger,
+		lifecycle:                util.NewRunLifecycle(groupName + "-consumer"),
 	}
 }
 
@@ -120,6 +124,11 @@ func (c *MultiClusterConsumer) Stop() {
 // Closed returns a channel that will be closed when the consumer is closed.
 func (c *MultiClusterConsumer) Closed() <-chan struct{} {
 	return c.doneC
+}
+
+// Errors returns errors from the sarama cluster
+func (c *MultiClusterConsumer) Errors() <-chan error {
+	return c.errorsC
 }
 
 // Messages returns a channel to receive messages on.

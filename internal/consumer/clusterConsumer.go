@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bsm/sarama-cluster"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/gig/kafka-client/internal/metrics"
 	"github.com/gig/kafka-client/internal/util"
 	"github.com/gig/kafka-client/kafka"
@@ -52,6 +52,7 @@ type (
 		metricsTicker    *time.Ticker
 		stopC            chan struct{}
 		doneC            chan struct{}
+		errorsC          chan error
 	}
 
 	ClusterGroup struct {
@@ -63,6 +64,7 @@ type (
 // NewClusterConsumer returns a new single cluster consumer.
 func NewClusterConsumer(
 	cluster string,
+	errorsC chan error,
 	saramaConsumer SaramaConsumer,
 	consumerMap map[string]*TopicConsumer,
 	scope tally.Scope,
@@ -78,6 +80,7 @@ func NewClusterConsumer(
 		metricsTicker:    time.NewTicker(metricsInterval),
 		stopC:            make(chan struct{}),
 		doneC:            make(chan struct{}),
+		errorsC:          errorsC,
 	}
 }
 
@@ -124,6 +127,11 @@ func (c *ClusterConsumer) Closed() <-chan struct{} {
 	return c.doneC
 }
 
+// Errors returns errors from the sarama cluster
+func (c *ClusterConsumer) Errors() <-chan error {
+	return c.errorsC
+}
+
 // eventLoop is the main event loop for this consumer
 func (c *ClusterConsumer) eventLoop() {
 	var n *cluster.Notification
@@ -141,6 +149,7 @@ func (c *ClusterConsumer) eventLoop() {
 		case err, ok := <-c.consumer.Errors():
 			if ok {
 				c.logger.Warn("cluster consumer error", zap.Error(err))
+				c.errorsC <- err
 			}
 		case _, ok := <-c.metricsTicker.C:
 			if ok && n != nil {

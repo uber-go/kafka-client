@@ -37,6 +37,8 @@ type (
 		Start() error
 		// Stop stops the consumer
 		Stop()
+		// Errors returns errors from the sarama cluster
+		Errors() <-chan error
 		// Closed returns a channel which will be closed after this consumer is completely shutdown
 		Closed() <-chan struct{}
 		// Messages return the message channel for this consumer

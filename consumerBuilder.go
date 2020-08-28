@@ -21,6 +21,8 @@
 package kafkaclient
 
 import (
+	"crypto/sha512"
+	"hash"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -28,8 +30,11 @@ import (
 	"github.com/gig/kafka-client/internal/consumer"
 	"github.com/gig/kafka-client/kafka"
 	"github.com/uber-go/tally"
+	"github.com/xdg/scram"
 	"go.uber.org/zap"
 )
+
+var SHA512 scram.HashGeneratorFcn = func() hash.Hash { return sha512.New() }
 
 type (
 	consumerBuilder struct {
@@ -62,6 +67,12 @@ type (
 		groupName string
 	}
 )
+
+type XDGSCRAMClient struct {
+	*scram.Client
+	*scram.ClientConversation
+	scram.HashGeneratorFcn
+}
 
 func newConsumerBuilder(
 	config *kafka.ConsumerConfig,
@@ -124,6 +135,7 @@ func (c *consumerBuilder) Build() (kafka.Consumer, error) {
 
 func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 	// build TopicList per cluster
+	errorsC := make(chan error)
 	for _, consumerTopic := range c.kafkaConfig.TopicList {
 		// first, add TopicConsumer for original topic if topic is well defined.
 		// disabling offset commit only applies for the original topic.
@@ -191,6 +203,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 			Group:   cluster.groupName,
 		}] = consumer.NewClusterConsumer(
 			cluster.name,
+			errorsC,
 			saramaConsumer,
 			topicConsumerMap,
 			c.scope,
@@ -204,6 +217,7 @@ func (c *consumerBuilder) build() (*consumer.MultiClusterConsumer, error) {
 		c.kafkaConfig.TopicList,
 		clusterConsumerMap,
 		c.clusterSaramaClientMap,
+		errorsC,
 		c.msgCh,
 		c.scope,
 		c.logger,
@@ -325,6 +339,9 @@ func buildOptions(config *kafka.ConsumerConfig, consumerOpts ...ConsumerOption) 
 		opts.OffsetPolicy = config.Offsets.Initial.Offset
 	}
 
+	opts.TLSConfig = config.TLSConfig
+	opts.SASLEnabled = config.SASLEnabled
+
 	// Apply optional consumer parameters that may be passed in.
 	for _, cOpt := range consumerOpts {
 		cOpt.apply(opts)
@@ -360,13 +377,34 @@ func buildSaramaConfig(options *consumer.Options) *cluster.Config {
 	config.Consumer.MaxProcessingTime = options.MaxProcessingTime
 
 	if options.SASLEnabled {
-		config.Config.Net.SASL.Enable = true
-		config.Config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
-		config.Config.Net.SASL.User = options.SASLUsername
-		config.Config.Net.SASL.Password = options.SASLPassword
-
+		config.Net.SASL.Enable = true
+		config.Net.SASL.User = options.SASLUsername
+		config.Net.SASL.Password = options.SASLPassword
+		config.Net.SASL.Handshake = true
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA512} }
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+		config.Net.TLS.Enable = true
+		config.Net.TLS.Config = options.TLSConfig
 	}
 	return config
+}
+
+func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
+	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
+	if err != nil {
+		return err
+	}
+	x.ClientConversation = x.Client.NewConversation()
+	return nil
+}
+
+func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
+	response, err = x.ClientConversation.Step(challenge)
+	return
+}
+
+func (x *XDGSCRAMClient) Done() bool {
+	return x.ClientConversation.Done()
 }
 
 func topicToRetryTopic(topic kafka.ConsumerTopic) kafka.ConsumerTopic {
